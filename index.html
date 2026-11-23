@@ -81,6 +81,11 @@ nav button.aktif{color:var(--vurgu)}
 .dtab input{width:70px;padding:6px;text-align:center}
 .mini{padding:4px 9px;font-size:12px;border-radius:8px}
 .yesil{color:#56d364}.kirmizi{color:#ff7b72}
+.canli{display:flex;align-items:center;justify-content:space-between;background:#2a1215;border:1px solid #5c2026;border-radius:9px;padding:6px 10px;margin-bottom:8px;font-size:13px}
+.canli.bitti{background:var(--kart2);border-color:var(--border)}
+.canli .skor{font-size:18px;font-weight:800;letter-spacing:1px}
+.canli .nokta{display:inline-block;width:8px;height:8px;border-radius:50%;background:#ff4d4f;margin-right:6px;animation:yan 1.2s infinite}
+@keyframes yan{50%{opacity:.25}}
 </style>
 </head>
 <body>
@@ -228,7 +233,7 @@ const DEGER_MAX_ORAN = 7.0, DEGER_MIN_OLAS = 0.15; // uç sürpriz oranları ele
 const degerMi = (p, o) => o > 1 && o <= DEGER_MAX_ORAN && p >= DEGER_MIN_OLAS && p*o-1 > DEGER_ESIGI;
 const ONBELLEK_SURE = 3*3600e3;    // 3 saat
 const ONCEKI_SEZON_AGIRLIK = 0.4;  // geçen sezon maçları bu ağırlıkla modele katılır
-const SURUM = 'v1.2';
+const SURUM = 'v1.3';
 const KES_DELTA = 0.02, KES_MAX_ORAN = 5.0;      // keskin referansa göre en az %2 değer, oran ≤ 5
 const KELLY_KESIR = 0.25, KELLY_TAVAN = 0.03;     // ¼ Kelly, kasanın en fazla %3'ü
 const VARSAYILAN_ORANSIZ = {a:0.5, p:0.5, m:0};
@@ -680,6 +685,100 @@ function tahminleriKaydet(lig, D){
 }
 
 // ════════════════════════════════════════════════════════════
+//  CANLI SKOR — ESPN herkese açık skor servisi (anahtar gerekmez)
+// ════════════════════════════════════════════════════════════
+const ESPN = {T1:'tur.1',E0:'eng.1',SP1:'esp.1',I1:'ita.1',D1:'ger.1',F1:'fra.1',N1:'ned.1',P1:'por.1',B1:'bel.1',G1:'gre.1',
+  E1:'eng.2',E2:'eng.3',E3:'eng.4',EC:'eng.5',SC0:'sco.1',SC1:'sco.2',SC2:'sco.3',SC3:'sco.4',D2:'ger.2',I2:'ita.2',SP2:'esp.2',F2:'fra.2'};
+// football-data kısaltmaları → ESPN'deki karşılığına yakın yazım
+const AD_ESLE = {buyuksehyr:'basaksehir', goztep:'goztepe', man:'manchester', utd:'united', ath:'atletico', ein:'eintracht',
+  "nott'm":'nottingham', nottm:'nottingham', wolves:'wolverhampton', 'm\'gladbach':'monchengladbach', mgladbach:'monchengladbach',
+  'paris sg':'paris saint germain', psg:'paris saint germain', inter:'internazionale', espanol:'espanyol', sociedad:'real sociedad',
+  vallecano:'rayo vallecano', betis:'real betis', celta:'celta vigo', 'st etienne':'saint etienne', spurs:'tottenham', qpr:'queens park rangers',
+  'sheffield weds':'sheffield wednesday', 'west brom':'west bromwich', 'leverkusen':'bayer leverkusen', 'dortmund':'borussia dortmund'};
+const DURAK = new Set(['fc','sk','fk','as','ac','cf','afc','sc','ss','us','ssc','club','calcio','cd','ud','rc','sv','vfb','vfl','tsg','bk','if','kv','krc','the','de','la','1','a']);
+function adNorm(x){
+  let t = String(x).toLowerCase().replace(/ı/g,'i').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[.\-_/]/g,' ').replace(/\s+/g,' ').trim();
+  if(AD_ESLE[t]) t = AD_ESLE[t];
+  t = t.split(' ').map(w => AD_ESLE[w] || w).join(' ');
+  return t.split(' ').filter(w => w && !DURAK.has(w)).join(' ');
+}
+function trigram(x){ const s=' '+x+' ', g=new Set(); for(let i=0;i<s.length-2;i++) g.add(s.slice(i,i+3)); return g; }
+function adBenzer(a, b){
+  a = adNorm(a); b = adNorm(b); if(!a || !b) return 0; if(a===b) return 1;
+  const ta=a.split(' '), tb=b.split(' ');
+  if(ta.some(w=>w.length>=4 && b.includes(w)) || tb.some(w=>w.length>=4 && a.includes(w))) return 0.85;
+  const A=trigram(a), B=trigram(b); let o=0; A.forEach(g=>{ if(B.has(g)) o++; });
+  return 2*o/(A.size+B.size);
+}
+const ymd = ms => { const d=new Date(ms); return d.getUTCFullYear()+String(d.getUTCMonth()+1).padStart(2,'0')+String(d.getUTCDate()).padStart(2,'0'); };
+async function espnCek(slug){
+  const simdi = Date.now();
+  const adresler = [`https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?dates=${ymd(simdi-86400e3)}-${ymd(simdi+86400e3)}`,
+                    `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard`];
+  for(const url of adresler){
+    const dene = [url, 'https://api.allorigins.win/raw?url='+encodeURIComponent(url), 'https://corsproxy.io/?url='+encodeURIComponent(url)];
+    const ozel = (ls('slt_proxy')||'').trim(); if(ozel) dene.unshift(ozel+encodeURIComponent(url));
+    try{
+      const j = await Promise.any(dene.map(u => zamanAsimliFetch(u, 12000).then(t => { const o=JSON.parse(t); if(!o.events) throw 0; return o; })));
+      const ev = j.events.map(e => { const c=e.competitions&&e.competitions[0]; if(!c) return null;
+        const h=c.competitors.find(x=>x.homeAway==='home'), a=c.competitors.find(x=>x.homeAway==='away'); if(!h||!a) return null;
+        const st=(e.status||c.status||{}); const ty=st.type||{};
+        return {t:Date.parse(e.date), ev:h.team.displayName, dep:a.team.displayName, evK:h.team.shortDisplayName, depK:a.team.shortDisplayName,
+                hs:+h.score||0, as:+a.score||0, durum:ty.state, detay:ty.shortDetail||'', dakika:st.displayClock||''}; }).filter(Boolean);
+      if(ev.length) return ev;
+    }catch(e){}
+  }
+  return [];
+}
+// Fikstürü ESPN maçıyla eşleştir: başlama saati ±30 dk + takım adı benzerliği
+function canliEslestir(fikstur, olaylar){
+  const adaylar = [];
+  fikstur.forEach((f,fi) => {
+    const yakin = olaylar.filter(e => Math.abs(e.t-f.t) <= 30*60e3);
+    yakin.forEach(e => { const sk = Math.max(adBenzer(f.ev,e.ev), adBenzer(f.ev,e.evK)) + Math.max(adBenzer(f.dep,e.dep), adBenzer(f.dep,e.depK));
+      if(sk >= 0.6 || (yakin.length===1 && sk >= 0.3)) adaylar.push({fi, e, sk}); });
+  });
+  adaylar.sort((a,b)=>b.sk-a.sk);
+  const sonuc = new Map(), kullanilan = new Set();
+  for(const x of adaylar){ if(sonuc.has(x.fi) || kullanilan.has(x.e)) continue; sonuc.set(x.fi, x.e); kullanilan.add(x.e); }
+  return sonuc;
+}
+let canliVeri = new Map(), canliZamanlayici = null, canliSon = 0;
+const canliPencerede = f => Date.now() > f.t - 15*60e3 && Date.now() < f.t + 3*3600e3;
+async function canliGuncelle(){
+  if(!D || !aktifLig || !ESPN[aktifLig.id] || document.hidden) return;
+  if(!D.fikstur.some(canliPencerede)) { canliVeri = new Map(); return; }
+  const lig = aktifLig, fik = D.fikstur;
+  const olaylar = await espnCek(ESPN[lig.id]);
+  if(lig !== aktifLig || fik !== (D && D.fikstur)) return;
+  canliVeri = canliEslestir(fik, olaylar); canliSon = Date.now();
+  canliCiz();
+}
+function canliBaslat(){
+  clearInterval(canliZamanlayici); canliVeri = new Map();
+  canliGuncelle(); canliZamanlayici = setInterval(canliGuncelle, 60e3);
+}
+document.addEventListener('visibilitychange', () => { if(!document.hidden && Date.now()-canliSon > 30e3) canliGuncelle(); });
+function canliCiz(){
+  if(!D) return;
+  D.fikstur.forEach((f,i) => {
+    const el = document.getElementById('cl'+i); if(!el) return;
+    const e = canliVeri.get(i);
+    if(!e || e.durum==='pre'){ el.innerHTML=''; el.style.display='none'; return; }
+    el.style.display='';
+    const T = tahminEt(D.M, f.ev, f.dep, f.oran, D.W);
+    if(e.durum==='in'){
+      el.className='canli';
+      el.innerHTML = `<span><span class="nokta"></span><b>CANLI</b> ${esc(e.detay || e.dakika)}</span><span class="skor">${e.hs} - ${e.as}</span>`;
+    } else {
+      const r = e.hs>e.as?0:e.hs===e.as?1:2;
+      el.className='canli bitti';
+      el.innerHTML = `<span><b>Maç sonu</b> ${r===T.sec?'<span class="rozet y">tahmin ✓</span>':'<span class="rozet k">tahmin ✗</span>'}${e.hs===T.skor.i&&e.as===T.skor.j?'<span class="rozet">tam skor!</span>':''}</span><span class="skor">${e.hs} - ${e.as}</span>`;
+    }
+  });
+}
+
+// ════════════════════════════════════════════════════════════
 //  ARAYÜZ
 // ════════════════════════════════════════════════════════════
 let D = null, aktifLig = null;
@@ -708,6 +807,7 @@ async function yukle(zorla){
     D = {...V, M, K, W, ozet, strateji: stratejiTest(V.onceki.concat(V.sonuclar))};
     tahminleriKaydet(lig, D);
     defterSonuclandir(lig, D);
+    setTimeout(canliBaslat, 0);
     const b = V.bilgi[0];
     durum(`${lig.ad} ${esc(V.sezonAd)} · ${V.sonuclar.length} maç · ${b.kaynak} veri (${tarihYaz(b.t)})${b.uyari?' — internet yok, eski veri gösteriliyor':''}`, b.uyari);
     hepsiniCiz();
@@ -718,7 +818,7 @@ async function yukle(zorla){
   }
 }
 
-function hepsiniCiz(){ maclariCiz(); takimSecDoldur(); puanCiz(); basariCiz(); deneyCiz(); }
+function hepsiniCiz(){ maclariCiz(); canliCiz(); takimSecDoldur(); puanCiz(); basariCiz(); deneyCiz(); }
 let seciliF = null;
 
 function pillHtml(B, sec, deger, oran){
@@ -739,6 +839,7 @@ function maclariCiz(){
     return `<div class="kart mac" data-i="${idx}">
       <div class="ust"><span>${tarihYaz(f.t)}</span><span>Skor: <b style="color:var(--beyaz)">${T.skor.i}-${T.skor.j}</b>${d?`<span class="rozet">💎 ${d.ad} @${d.enIyi.toFixed(2)} +%${(d.enIyiEv*100).toFixed(1)}</span>`:''}</span></div>
       <div class="takimlar">${esc(f.ev)} <span style="color:var(--gri)">–</span> ${esc(f.dep)}</div>
+      <div class="canli" id="cl${idx}" style="display:none"></div>
       ${pillHtml(T.B, T.sec, S.filter(x=>x.pazar==='1X2'), f.oran)}
     </div>`;
   }).join('');
