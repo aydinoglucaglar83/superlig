@@ -77,6 +77,10 @@ nav button.aktif{color:var(--vurgu)}
 @keyframes d{to{transform:rotate(360deg)}}
 .sekme{display:flex;gap:6px;margin-bottom:10px}
 .sekme button{flex:1;padding:7px}
+.dtab td,.dtab th{padding:6px 3px}
+.dtab input{width:70px;padding:6px;text-align:center}
+.mini{padding:4px 9px;font-size:12px;border-radius:8px}
+.yesil{color:#56d364}.kirmizi{color:#ff7b72}
 </style>
 </head>
 <body>
@@ -101,11 +105,15 @@ nav button.aktif{color:var(--vurgu)}
         <div><label class="k">Ev sahibi</label><select id="evSec"></select></div>
         <div><label class="k">Deplasman</label><select id="depSec"></select></div>
       </div>
-      <label class="k">Oranlar (otomatik gelir; İddaa oranını yazıp değiştirebilirsin)</label>
+      <label class="k">Senin oranların (İddaa vb.) — boş bırakırsan piyasa ortalaması kullanılır</label>
       <div class="satir oranlar">
         <input id="o1" inputmode="decimal" placeholder="1">
         <input id="oX" inputmode="decimal" placeholder="X">
         <input id="o2" inputmode="decimal" placeholder="2">
+      </div>
+      <div class="satir oranlar">
+        <input id="oU" inputmode="decimal" placeholder="Üst 2.5">
+        <input id="oA" inputmode="decimal" placeholder="Alt 2.5">
       </div>
       <button id="hesaplaBtn" style="width:100%">Tahmin Et</button>
     </div>
@@ -120,6 +128,16 @@ nav button.aktif{color:var(--vurgu)}
   <!-- BAŞARI -->
   <section class="ekran" id="e-basari">
     <div id="basariIcerik"></div>
+  </section>
+
+  <!-- DENEY -->
+  <section class="ekran" id="e-deney">
+    <div class="kart">
+      <h3>Deney kasası</h3>
+      <div class="satir"><input id="kasaInp" inputmode="decimal" placeholder="1000"><button id="kasaKaydet" style="flex:0 0 auto">Kaydet</button></div>
+      <div class="kucuk">Önerilen bahis miktarı bu kasaya göre hesaplanır (¼ Kelly, bahis başına en fazla %3).</div>
+    </div>
+    <div id="deneyIcerik"></div>
   </section>
 
   <!-- AYARLAR -->
@@ -154,6 +172,7 @@ nav button.aktif{color:var(--vurgu)}
   <button data-e="tahmin"><i>🎯</i>Tahmin</button>
   <button data-e="puan"><i>🏆</i>Puan</button>
   <button data-e="basari"><i>📈</i>Başarı</button>
+  <button data-e="deney"><i>🧪</i>Deney</button>
   <button data-e="ayar"><i>⚙️</i>Ayarlar</button>
 </nav>
 
@@ -209,7 +228,9 @@ const DEGER_MAX_ORAN = 7.0, DEGER_MIN_OLAS = 0.15; // uç sürpriz oranları ele
 const degerMi = (p, o) => o > 1 && o <= DEGER_MAX_ORAN && p >= DEGER_MIN_OLAS && p*o-1 > DEGER_ESIGI;
 const ONBELLEK_SURE = 3*3600e3;    // 3 saat
 const ONCEKI_SEZON_AGIRLIK = 0.4;  // geçen sezon maçları bu ağırlıkla modele katılır
-const SURUM = 'v1.1';
+const SURUM = 'v1.2';
+const KES_DELTA = 0.02, KES_MAX_ORAN = 5.0;      // keskin referansa göre en az %2 değer, oran ≤ 5
+const KELLY_KESIR = 0.25, KELLY_TAVAN = 0.03;     // ¼ Kelly, kasanın en fazla %3'ü
 const VARSAYILAN_ORANSIZ = {a:0.5, p:0.5, m:0};
 
 // ════════════════════════════════════════════════════════════
@@ -303,7 +324,12 @@ function anaSatirCevir(r){
   const o = (a,b,c) => { const x=[num(r[a]),num(r[b]),num(r[c])]; return x.every(v=>v&&v>1) ? x : null; };
   const oran = o('AvgH','AvgD','AvgA') || o('B365H','B365D','B365A') || o('PSH','PSD','PSA') || o('AvgCH','AvgCD','AvgCA');
   const oranMax = o('MaxH','MaxD','MaxA') || o('B365H','B365D','B365A') || o('PSH','PSD','PSA') || oran;
-  return {t, ev:r.HomeTeam, dep:r.AwayTeam, hg, ag, oran, oranMax};
+  const o2 = (a,b) => { const x=[num(r[a]),num(r[b])]; return x.every(v=>v&&v>1) ? x : null; };
+  const k = {bfe:o('BFEH','BFED','BFEA'), max:o('MaxH','MaxD','MaxA'), avg:o('AvgH','AvgD','AvgA'),
+             bfeC:o('BFECH','BFECD','BFECA'), avgC:o('AvgCH','AvgCD','AvgCA'),
+             ouBfe:o2('BFE>2.5','BFE<2.5'), ouMax:o2('Max>2.5','Max<2.5'), ouAvg:o2('Avg>2.5','Avg<2.5'),
+             ouBfeC:o2('BFEC>2.5','BFEC<2.5'), ouAvgC:o2('AvgC>2.5','AvgC<2.5')};
+  return {t, ev:r.HomeTeam, dep:r.AwayTeam, hg, ag, oran, oranMax, k};
 }
 function ekSatirCevir(r){
   const t = ukZamani(r.Date, r.Time); if(!t || !r.Home || !r.Away) return null;
@@ -463,9 +489,7 @@ function tahminEt(M, ev, dep, oran, W){
   const B = karistir(A.p, P.p, Mk && Mk.p, w);
   const sec = B.indexOf(Math.max(...B));
   const uygun = P.skorlar.filter(s => (sec===0 ? s.i>s.j : sec===1 ? s.i===s.j : s.i<s.j));
-  const deger = [];
-  if(oran) for(let i=0;i<3;i++){ if(degerMi(B[i], oran[i])) deger.push({i, oran:oran[i], ev:B[i]*oran[i]-1}); }
-  deger.sort((a,b)=>b.ev-a.ev);
+  const deger = [];   // değer tespiti artık keskin piyasa referansıyla yapılıyor (secenekler)
   return {A, P, Mk, B, w, sec, skor: uygun[0] || P.skorlar[0], deger};
 }
 
@@ -537,6 +561,90 @@ function basariOzeti(KB){
 }
 
 // ════════════════════════════════════════════════════════════
+//  KESKİN PİYASA DENEYİ — Betfair Borsası adil olasılığı vs sunulan oran
+// ════════════════════════════════════════════════════════════
+function devig(o){ if(!o) return null; const inv=o.map(x=>1/x), s=inv.reduce((a,b)=>a+b,0); return {p:inv.map(x=>x/s), ov:s-1}; }
+const PAZAR_AD = {'1X2':['1','X','2'], 'OU':['Üst 2.5','Alt 2.5']};
+// Adil olasılık: önce Betfair Borsası (marjı küçük ve makulse), yoksa piyasa ortalaması (zayıf referans)
+function adilOlas(k, pazar){
+  if(!k) return null;
+  const bf = devig(pazar==='1X2' ? k.bfe : k.ouBfe);
+  if(bf && bf.ov >= 0 && bf.ov <= 0.06) return {p:bf.p, kaynak:'Betfair Borsası', zayif:false};
+  const av = devig(pazar==='1X2' ? k.avg : k.ouAvg);
+  return av ? {p:av.p, kaynak:'piyasa ortalaması', zayif:true} : null;
+}
+function kapanisOlas(k, pazar){
+  if(!k) return null;
+  const bf = devig(pazar==='1X2' ? k.bfeC : k.ouBfeC);
+  if(bf && bf.ov >= 0 && bf.ov <= 0.06) return bf.p;
+  const av = devig(pazar==='1X2' ? k.avgC : k.ouAvgC); return av ? av.p : null;
+}
+const degerVar = (p, o) => o && o > 1 && o <= KES_MAX_ORAN && p*o - 1 > KES_DELTA;
+function kellyMiktar(p, o){
+  if(!o || o<=1) return 0;
+  const kasa = num(ls('slt_kasa')) || 1000;
+  const f = Math.min(KELLY_TAVAN, Math.max(0, (p*o-1)/(o-1)) * KELLY_KESIR);
+  return Math.max(0, Math.round(kasa*f));
+}
+// Bir maç için 5 seçeneğin (1, X, 2, Üst, Alt) analizi. sen = kullanıcının oranları {1X2:[..], OU:[..]}
+function secenekler(f, sen){
+  const out = [];
+  for(const pazar of ['1X2','OU']){
+    const a = f && adilOlas(f.k, pazar); if(!a) continue;
+    const enIyi = pazar==='1X2' ? f.k.max : f.k.ouMax;
+    const senin = sen && sen[pazar];
+    a.p.forEach((p,i) => {
+      const oi = enIyi ? enIyi[i] : null, os = senin ? senin[i] : null;
+      out.push({pazar, i, ad:PAZAR_AD[pazar][i], p, kaynak:a.kaynak, zayif:a.zayif,
+        enIyi:oi, enIyiEv: oi ? p*oi-1 : null, enIyiDeger: !a.zayif && degerVar(p, oi),
+        sen:os, senEv: os ? p*os-1 : null, senDeger: !a.zayif && degerVar(p, os)});
+    });
+  }
+  return out;
+}
+const kazandi = (pazar, i, hg, ag) => pazar==='1X2' ? (i===(hg>ag?0:hg===ag?1:2)) : (i===0 ? hg+ag>2.5 : hg+ag<2.5);
+// Geçmiş maçlarda strateji: Betfair adil olasılığına göre en iyi oranda ≥%2 değer → 1 birim bahis
+function stratejiTest(maclar){
+  const g = [], clv = [];
+  for(const m of maclar){
+    if(!m.k || !oynandi(m)) continue;
+    for(const pazar of ['1X2','OU']){
+      const a = adilOlas(m.k, pazar); if(!a || a.zayif) continue;
+      const enIyi = pazar==='1X2' ? m.k.max : m.k.ouMax; if(!enIyi) continue;
+      const kp = kapanisOlas(m.k, pazar);
+      a.p.forEach((p,i) => { if(!degerVar(p, enIyi[i])) return;
+        g.push(kazandi(pazar,i,m.hg,m.ag) ? enIyi[i]-1 : -1);
+        if(kp) clv.push(Math.log(enIyi[i]*kp[i])); });
+    }
+  }
+  return istat(g, clv);
+}
+function istat(g, clv){
+  const n = g.length, kar = g.reduce((a,b)=>a+b,0), ort = n ? kar/n : 0;
+  const sd = n>1 ? Math.sqrt(g.reduce((a,x)=>a+(x-ort)**2,0)/(n-1)) : 0;
+  return {n, kar, roi:ort, ga: n>1 ? 1.96*sd/Math.sqrt(n) : null, tut:g.filter(x=>x>0).length,
+          clv: clv.length ? clv.reduce((a,b)=>a+b,0)/clv.length : null, clvPoz: clv.length ? clv.filter(x=>x>0).length/clv.length : null, clvN: clv.length};
+}
+// Deney defteri: kullanıcının "oynadım" dediği bahisler
+function defterOku(){ return ls('slt_deney') || []; }
+function defterYaz(d){ if(!ls('slt_deney', d)) durum('Uyarı: deney defteri kaydedilemedi.', true); }
+function defterSonuclandir(lig, D){
+  const d = defterOku(); let degisti = false;
+  for(const b of d){
+    if(b.lig!==lig.id || b.sonuc) continue;
+    let en=null;
+    for(const m of D.sonuclar){ if(m.ev!==b.ev || m.dep!==b.dep || m.t < b.t-4*86400e3 || m.t > b.t+60*86400e3) continue;
+      if(!en || Math.abs(m.t-b.t) < Math.abs(en.t-b.t)) en=m; }
+    if(!en) continue;
+    b.sonuc=[en.hg,en.ag]; const w = kazandi(b.pazar,b.i,en.hg,en.ag);
+    b.kar = w ? b.miktar*(b.oran-1) : -b.miktar;
+    const kp = kapanisOlas(en.k, b.pazar); b.clv = kp ? Math.log(b.oran*kp[b.i]) : null;
+    degisti = true;
+  }
+  if(degisti) defterYaz(d);
+}
+
+// ════════════════════════════════════════════════════════════
 //  TAHMİN KAYDI (tuttu mu?)
 // ════════════════════════════════════════════════════════════
 function logOku(){ return ls('slt_log') || {}; }
@@ -597,8 +705,9 @@ async function yukle(zorla){
     const K = geriTest(V.sonuclar, V.onceki);
     const W = agirlikBul(K);                       // canlı tahminler için tüm geçmişten öğrenilen ağırlıklar
     const ozet = K.length ? basariOzeti(ileriTest(K)) : null;   // başarı ölçümü örneklem dışı
-    D = {...V, M, K, W, ozet};
+    D = {...V, M, K, W, ozet, strateji: stratejiTest(V.onceki.concat(V.sonuclar))};
     tahminleriKaydet(lig, D);
+    defterSonuclandir(lig, D);
     const b = V.bilgi[0];
     durum(`${lig.ad} ${esc(V.sezonAd)} · ${V.sonuclar.length} maç · ${b.kaynak} veri (${tarihYaz(b.t)})${b.uyari?' — internet yok, eski veri gösteriliyor':''}`, b.uyari);
     hepsiniCiz();
@@ -609,7 +718,8 @@ async function yukle(zorla){
   }
 }
 
-function hepsiniCiz(){ maclariCiz(); takimSecDoldur(); puanCiz(); basariCiz(); }
+function hepsiniCiz(){ maclariCiz(); takimSecDoldur(); puanCiz(); basariCiz(); deneyCiz(); }
+let seciliF = null;
 
 function pillHtml(B, sec, deger, oran){
   const lbl=['1','X','2'];
@@ -624,21 +734,30 @@ function maclariCiz(){
   }
   el.innerHTML = D.fikstur.map((f,idx) => {
     const T = tahminEt(D.M, f.ev, f.dep, f.oran, D.W);
-    const d = T.deger[0];
+    const S = secenekler(f).filter(x=>x.enIyiDeger).sort((a,b)=>b.enIyiEv-a.enIyiEv);
+    const d = S[0];
     return `<div class="kart mac" data-i="${idx}">
-      <div class="ust"><span>${tarihYaz(f.t)}</span><span>Skor tahmini: <b style="color:var(--beyaz)">${T.skor.i}-${T.skor.j}</b>${d?`<span class="rozet">💎 Değerli ${['1','X','2'][d.i]}</span>`:''}</span></div>
+      <div class="ust"><span>${tarihYaz(f.t)}</span><span>Skor: <b style="color:var(--beyaz)">${T.skor.i}-${T.skor.j}</b>${d?`<span class="rozet">💎 ${d.ad} @${d.enIyi.toFixed(2)} +%${(d.enIyiEv*100).toFixed(1)}</span>`:''}</span></div>
       <div class="takimlar">${esc(f.ev)} <span style="color:var(--gri)">–</span> ${esc(f.dep)}</div>
-      ${pillHtml(T.B, T.sec, T.deger, f.oran)}
+      ${pillHtml(T.B, T.sec, S.filter(x=>x.pazar==='1X2'), f.oran)}
     </div>`;
   }).join('');
   el.querySelectorAll('.mac').forEach(k => k.onclick = () => {
     const f = D.fikstur[+k.dataset.i];
     $('evSec').value = f.ev; $('depSec').value = f.dep;
-    ['o1','oX','o2'].forEach((id,i)=> $(id).value = f.oran ? f.oran[i].toFixed(2) : '');
+    oranKutulariHazirla(f);
     ekranAc('tahmin'); tahminCiz();
   });
 }
 
+function oranKutulariHazirla(f){
+  seciliF = f || null;
+  ['o1','oX','o2','oU','oA'].forEach(id => $(id).value = '');
+  const ph = (id, v, lbl) => $(id).placeholder = v ? `${lbl}  (${v.toFixed(2)})` : lbl;
+  const a = f && (f.k ? f.k.avg : null) || (f && f.oran);
+  ph('o1', a&&a[0], '1'); ph('oX', a&&a[1], 'X'); ph('o2', a&&a[2], '2');
+  const u = f && f.k && f.k.ouAvg; ph('oU', u&&u[0], 'Üst 2.5'); ph('oA', u&&u[1], 'Alt 2.5');
+}
 function takimSecDoldur(){
   const takimlar = D ? [...new Set(D.sonuclar.flatMap(m=>[m.ev,m.dep]).concat(D.fikstur.flatMap(f=>[f.ev,f.dep])))].sort((a,b)=>a.localeCompare(b,'tr')) : [];
   const op = takimlar.map(t=>`<option>${esc(t)}</option>`).join('');
@@ -655,7 +774,11 @@ function tahminCiz(){
   const ev=$('evSec').value, dep=$('depSec').value;
   if(!ev || !dep || ev===dep){ el.innerHTML='<div class="bos">İki farklı takım seç.</div>'; return; }
   const o=[num($('o1').value), num($('oX').value), num($('o2').value)];
-  const oran = o.every(x=>x&&x>1) ? o : null;
+  const ou=[num($('oU').value), num($('oA').value)];
+  const temiz = arr => arr.map(x => x && x>1 ? x : null);
+  const senin = {'1X2': temiz(o), 'OU': temiz(ou)};   // tek tek girilebilir
+  const f = seciliF && seciliF.ev===ev && seciliF.dep===dep ? seciliF : null;
+  const oran = (senin['1X2'].every(x=>x) ? senin['1X2'] : null) || (f && f.oran) || null;
   const T = tahminEt(D.M, ev, dep, oran, D.W), A=T.A, P=T.P, B=T.B, w=T.w;
   const ad = [ev, 'Beraberlik', dep];
   const guven = Math.max(...B) >= 0.55 ? 'Yüksek' : Math.max(...B) >= 0.45 ? 'Orta' : 'Düşük';
@@ -671,13 +794,7 @@ function tahminCiz(){
     <div class="alt">Güven: ${guven} · En olası skor: <b>${T.skor.i}-${T.skor.j}</b></div>
     <div class="skorlar">${P.skorlar.slice(0,5).map(s=>`<div>${s.i}-${s.j} <span style="color:var(--gri)">%${(s.p*100).toFixed(1)}</span></div>`).join('')}</div>
   </div>
-  <div class="kart">
-    <h3>Oran analizi</h3>
-    ${oran ? (T.deger.length ? T.deger.map(d=>`<div class="kv"><span>💎 Değerli: ${['1','X','2'][d.i]} @ ${d.oran.toFixed(2)}</span><span style="color:var(--sari)">Beklenen +%${(d.ev*100).toFixed(1)}</span></div>`).join('')
-      : '<div class="kucuk">Değerli oran yok: oranlar modelin olasılıklarıyla uyumlu ya da düşük.</div>')
-      + satir('Piyasa olasılığı (1/X/2)', p3(T.Mk&&T.Mk.p)) + satir('Bahis şirketi marjı', T.Mk?('%'+(T.Mk.marj*100).toFixed(1)):'—')
-      : '<div class="kucuk">Oran girilmedi; tahmin sadece istatistik modelleriyle yapıldı.</div>'}
-  </div>
+  ${keskinKart(f, senin)}
   <div class="kart">
     <h3>Modeller</h3>
     ${satir(`Algoritma (ağırlık %${yuzde(w.a)})`, p3(A.p))}
@@ -701,6 +818,68 @@ function tahminCiz(){
     </div>
     ${satir('Beraberlik eğilimi', A.bere_ham.toFixed(0)+' · '+beraberlikEtiketi(D.M, A.bere_ham))}
   </div>`;
+}
+
+function keskinKart(f, senin){
+  const S = secenekler(f, senin);
+  if(!S.length) return `<div class="kart"><h3>💎 Değer analizi (deney)</h3><div class="kucuk">Bu maç için keskin piyasa (Betfair) oranı yok. Değer analizi sadece Maçlar listesindeki ana lig maçlarında yapılabilir.</div></div>`;
+  const zayif = S.some(x=>x.zayif);
+  const ev = x => x===null ? '—' : `<span class="${x>KES_DELTA?'yesil':x<0?'kirmizi':''}">${x>0?'+':''}${(x*100).toFixed(1)}%</span>`;
+  const satirlar = S.map((x,j) => `<tr><td class="l"><b>${x.ad}</b></td><td>%${(x.p*100).toFixed(1)}<br><span class="kucuk">${(1/x.p).toFixed(2)}</span></td>
+    <td>${x.enIyi?x.enIyi.toFixed(2):'—'}<br>${ev(x.enIyiEv)}</td><td>${x.sen?x.sen.toFixed(2):'—'}<br>${ev(x.senEv)}</td>
+    <td>${(x.senDeger||x.enIyiDeger)?`<button class="mini" data-oyna="${j}">Oyna</button>`:''}</td></tr>
+    <tr class="oynaForm" id="of${j}" style="display:none"><td colspan="5" style="text-align:left">
+      Oran <input id="ofo${j}" inputmode="decimal" value="${(x.senDeger?x.sen:x.enIyi||0).toFixed(2)}">
+      Miktar <input id="ofm${j}" inputmode="decimal" value="${kellyMiktar(x.p, x.senDeger?x.sen:x.enIyi)}">
+      <button class="mini" data-kaydet="${j}">Deftere yaz</button></td></tr>`).join('');
+  setTimeout(() => {
+    document.querySelectorAll('[data-oyna]').forEach(b => b.onclick = () => { const e=$('of'+b.dataset.oyna); e.style.display = e.style.display==='none' ? '' : 'none'; });
+    document.querySelectorAll('[data-kaydet]').forEach(b => b.onclick = () => {
+      const j=+b.dataset.kaydet, x=S[j], oran=num($('ofo'+j).value), miktar=num($('ofm'+j).value);
+      if(!oran || oran<=1 || !miktar || miktar<=0){ b.textContent='Oran/miktar?'; return; }
+      const d = defterOku();
+      d.push({id:Date.now()+'-'+j, lig:aktifLig.id, ev:f.ev, dep:f.dep, t:f.t, pazar:x.pazar, i:x.i, ad:x.ad, oran, miktar, pAdil:+x.p.toFixed(4), kayit:Date.now()});
+      defterYaz(d); b.textContent='✓ Yazıldı'; b.disabled=true; deneyCiz();
+    });
+  }, 0);
+  return `<div class="kart"><h3>💎 Değer analizi (deney)</h3>
+    <div class="kucuk" style="margin-bottom:6px">Adil olasılık: <b>${S[0].kaynak}</b>${zayif?' — keskin referans yok, değer önerilmez':''}. Bir oranın değerli sayılması için adil olasılıkla çarpımı en az %${KES_DELTA*100} kâr göstermeli (oran ≤ ${KES_MAX_ORAN}).</div>
+    <table class="dtab"><tr><th class="l">Seçim</th><th>Adil<br>olas./oran</th><th>En iyi<br>site</th><th>Senin<br>oranın</th><th></th></tr>${satirlar}</table>
+    <div class="kucuk" style="margin-top:6px">"En iyi site" birçok bahis sitesinin en yüksek oranıdır; Türkiye'den hepsine erişemeyebilirsin. Asıl ölçü "Senin oranın" sütunu: oranını yukarıya yaz, Tahmin Et'e bas.</div>
+  </div>`;
+}
+
+function deneyCiz(){
+  const el = $('deneyIcerik'); if(!el) return;
+  $('kasaInp').value = ls('slt_kasa') || '';
+  const satir = (k,v) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`;
+  const roi = s => s.n ? `<b class="${s.roi>=0?'yesil':'kirmizi'}">%${(s.roi*100).toFixed(1)}</b>${s.ga!==null?` ± ${(s.ga*100).toFixed(0)}`:''}` : '—';
+  const clv = s => s.clv!==null ? `<b class="${s.clv>=0?'yesil':'kirmizi'}">${s.clv>=0?'+':''}${(s.clv*100).toFixed(2)}%</b> <span style="color:var(--gri)">(%${Math.round(s.clvPoz*100)} pozitif)</span>` : '—';
+  let h = '';
+  const S = D && D.strateji;
+  h += `<div class="kart"><h3>Strateji testi · ${aktifLig?aktifLig.ad:''} (son 2 sezon)</h3>`
+    + (S && S.n ? satir('Değer bulunan bahis', `${S.n} (${S.tut} kazandı)`) + satir('1 birim bahisle kâr', `${S.kar>=0?'+':''}${S.kar.toFixed(1)} birim`)
+      + satir('ROI (%95 güven)', roi(S)) + satir('Kapanış oranını yenme (CLV)', clv(S))
+      + `<div class="kucuk" style="margin-top:6px">Kural: Betfair adil olasılığına göre en iyi sitede ≥%${KES_DELTA*100} değer ve oran ≤ ${KES_MAX_ORAN} (1X2 ve 2.5 Üst/Alt). CLV pozitifse strateji kapanıştan önce iyi fiyat yakalıyor demektir; uzun vadeli kârın en güvenilir göstergesidir. ROI'nin güven aralığı sıfırı içeriyorsa kâr henüz şanstan ayırt edilemez.</div>`
+      : `<div class="kucuk">Bu ligde test edilecek keskin oran verisi yok (ek liglerde yalnızca kapanış oranları var).</div>`) + `</div>`;
+  const d = defterOku(), biten = d.filter(b=>b.sonuc), bekl = d.filter(b=>!b.sonuc);
+  const yat = biten.reduce((a,b)=>a+b.miktar,0), kar = biten.reduce((a,b)=>a+b.kar,0);
+  const st = istat(biten.map(b=>b.kar/b.miktar), biten.filter(b=>b.clv!==null&&b.clv!==undefined).map(b=>b.clv));
+  h += `<div class="kart"><h3>Deney defterim (tüm ligler)</h3>`
+    + satir('Bahis (sonuçlanan / bekleyen)', `${biten.length} / ${bekl.length}`)
+    + satir('Yatırılan', yat.toFixed(0)) + satir('Kâr / zarar', `<b class="${kar>=0?'yesil':'kirmizi'}">${kar>=0?'+':''}${kar.toFixed(0)}</b>`)
+    + satir('ROI (birim başına, %95 güven)', roi(st)) + satir('Ortalama CLV', clv(st))
+    + `<div class="kucuk" style="margin-top:6px">Tahmin ekranında değerli seçeneğin yanındaki <b>Oyna</b> ile bahsini deftere yaz. Sonuç ve kapanış oranı gelince otomatik hesaplanır. En az 100–200 bahis olmadan ROI'ye güvenme; CLV çok daha erken bilgi verir.</div></div>`;
+  if(d.length){
+    h += `<div class="kart" style="padding:6px 4px"><table class="dtab"><tr><th>Tarih</th><th class="l">Maç / seçim</th><th>Oran</th><th>Miktar</th><th>Sonuç</th><th></th></tr>`
+      + d.slice().sort((a,b)=>b.t-a.t).map(b => `<tr><td>${gunYaz(b.t)}</td><td class="l">${esc(b.ev)} – ${esc(b.dep)}<br><b>${esc(b.ad)}</b> <span class="kucuk">${b.lig}</span></td><td>${b.oran.toFixed(2)}</td><td>${b.miktar}</td>
+        <td>${b.sonuc ? `${b.sonuc.join('-')}<br><b class="${b.kar>=0?'yesil':'kirmizi'}">${b.kar>=0?'+':''}${b.kar.toFixed(0)}</b>${b.clv!=null?`<br><span class="kucuk">CLV ${(b.clv*100).toFixed(1)}%</span>`:''}` : '<span class="rozet g">bekliyor</span>'}</td>
+        <td><button class="mini ghost" data-sil="${esc(b.id)}">✕</button></td></tr>`).join('') + `</table></div>`;
+  }
+  el.innerHTML = h;
+  el.querySelectorAll('[data-sil]').forEach(b => b.onclick = () => {
+    if(!b.dataset.onay){ b.dataset.onay='1'; b.textContent='Sil?'; return; }
+    defterYaz(defterOku().filter(x=>x.id!==b.dataset.sil)); deneyCiz(); });
 }
 
 function puanCiz(){
@@ -737,10 +916,7 @@ function basariCiz(){
       + satir('Sadece oranlar', oy(O.piy)+' · '+ll(O.piy))
       + `<div style="height:8px"></div>`
       + satir('Ağırlık (oranlı maç)', ag(W.mk)) + satir('Ağırlık (oransız maç)', ag(W.yok))
-      + satir('💎 Değerli oran önerileri', dg.bahis ? `${dg.bahis} öneri, ${dg.tut} tuttu` : '—')
-      + satir('💎 1 birim bahisle kâr/zarar', dg.bahis ? `<b style="color:${dg.kar>=0?'#56d364':'#ff7b72'}">${dg.kar>=0?'+':''}${dg.kar.toFixed(2)} birim</b>` : '—')
-      + satir('💎 ROI (%95 güven aralığı)', dg.bahis ? `%${(dg.roi*100).toFixed(1)}${dg.ga!==null?` ± ${(dg.ga*100).toFixed(0)}`:''}` : '—')
-      + `<div class="kucuk" style="margin-top:8px">Log-kayıp, olasılıkların ne kadar isabetli olduğunu ölçer; 1X2'de isabet yüzdesinden daha güvenilirdir. Değerli oran kazancı, maçın en yüksek oranıyla hesaplanır. Güven aralığı sıfırı içeriyorsa sonuç şans olabilir.</div></div>`;
+      + `<div class="kucuk" style="margin-top:8px">Log-kayıp, olasılıkların ne kadar isabetli olduğunu ölçer; 1X2'de isabet yüzdesinden daha güvenilirdir. Bahis/değer deneyi için 🧪 Deney sekmesine bak.</div></div>`;
   }
   const L = logOku(); const kay = Object.values(L).filter(k=>k.lig===aktifLig.id).sort((a,b)=>b.t-a.t);
   const biten = kay.filter(k=>k.sonuc);
@@ -750,7 +926,6 @@ function basariCiz(){
   h += `<div class="kart"><h3>Canlı kayıt (bu telefonda)</h3>`
     + satir('<b>Tutan tahmin (1X2)</b>', biten.length ? `<b>%${(tut/biten.length*100).toFixed(1)}</b> <span style="color:var(--gri)">(${tut}/${biten.length})</span>` : 'henüz sonuç yok')
     + satir('Tam skor tutan', biten.length ? `${skorTut}/${biten.length}` : '—')
-    + satir('💎 Değerli oran kâr/zarar', dB ? `${dK>=0?'+':''}${dK.toFixed(2)} birim (${dB} öneri)` : '—')
     + satir('Bekleyen tahmin', String(kay.length - biten.length))
     + `<div class="kucuk" style="margin-top:6px">Uygulama her açılışta yaklaşan maçların tahminini kaydeder; sonuçlar gelince otomatik kontrol eder.</div></div>`;
   if(kay.length){
@@ -759,7 +934,7 @@ function basariCiz(){
         let son='—', roz='<span class="rozet g">bekliyor</span>';
         if(k.sonuc){ const r=k.sonuc[0]>k.sonuc[1]?0:k.sonuc[0]===k.sonuc[1]?1:2; son=k.sonuc.join('-');
           roz = r===k.sec ? '<span class="rozet y">✓</span>' : '<span class="rozet k">✗</span>'; }
-        return `<tr><td>${gunYaz(k.t)}</td><td class="l">${esc(k.ev)} – ${esc(k.dep)}</td><td>${lbl} · ${k.skor.join('-')}${k.deger?' 💎':''}</td><td>${son}</td><td>${roz}</td></tr>`; }).join('')
+        return `<tr><td>${gunYaz(k.t)}</td><td class="l">${esc(k.ev)} – ${esc(k.dep)}</td><td>${lbl} · ${k.skor.join('-')}</td><td>${son}</td><td>${roz}</td></tr>`; }).join('')
       + `</table></div>`;
   }
   el.innerHTML = h;
@@ -776,10 +951,11 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => ekranAc(b
 $('ligSec').onchange = () => yukle(false);
 $('yenileBtn').onclick = () => yukle(true);
 $('hesaplaBtn').onclick = tahminCiz;
-['evSec','depSec'].forEach(id => $(id).onchange = () => { ['o1','oX','o2'].forEach(x=>$(x).value='');
+['evSec','depSec'].forEach(id => $(id).onchange = () => {
   const f = D && D.fikstur.find(f=>f.ev===$('evSec').value && f.dep===$('depSec').value);
-  if(f && f.oran) ['o1','oX','o2'].forEach((x,i)=>$(x).value=f.oran[i].toFixed(2));
+  oranKutulariHazirla(f);
   $('tahminSonuc').innerHTML=''; });
+$('kasaKaydet').onclick = () => { const v = num($('kasaInp').value); if(v && v>0){ ls('slt_kasa', String(v)); $('kasaKaydet').textContent='✓'; setTimeout(()=>$('kasaKaydet').textContent='Kaydet',1200); } };
 $('proxyInp').value = ls('slt_proxy') || '';
 $('proxyKaydet').onclick = () => { ls('slt_proxy', $('proxyInp').value.trim()); yukle(true); ekranAc('maclar'); };
 $('onbellekSil').onclick = () => { try{ Object.keys(localStorage).filter(k=>k.startsWith('slt_c_')).forEach(k=>localStorage.removeItem(k)); }catch(e){} yukle(true); ekranAc('maclar'); };

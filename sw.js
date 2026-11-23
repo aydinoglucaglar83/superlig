@@ -1,6 +1,6 @@
 // Basit service worker: uygulama kabuğunu önbelleğe alır (çevrimdışı açılış için).
 // Veri istekleri (football-data / proxy) hiç önbelleğe alınmaz; uygulama kendi önbelleğini kullanır.
-const CACHE = 'skor-tahmin-v1.1';
+const CACHE = 'skor-tahmin-v1.2';
 const KABUK = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(KABUK)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
