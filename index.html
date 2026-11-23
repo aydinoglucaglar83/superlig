@@ -131,6 +131,11 @@ body.kararlarda header #ligSec{visibility:hidden}
 .kp.yok{background:var(--kart2);border:1px dashed var(--border);color:var(--gri);font-weight:600;font-size:13px}
 .kp small{font-weight:600;font-size:12px;opacity:.9;text-align:right}
 .kdetay{display:none;margin-top:8px}
+.ks{display:flex;gap:8px;align-items:baseline;font-size:15px;padding:5px 0;border-bottom:1px dashed var(--border)}
+.ks:last-of-type{border-bottom:0}
+.ks .e{width:22px;flex:none}
+.ks .n{color:var(--gri);font-size:13px;width:96px;flex:none}
+.ks .v{font-weight:800}
 .kk.acik .kdetay{display:block}
 .esikler{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
 .esikler span{background:var(--kart2);border-radius:7px;padding:4px 7px;font-size:12px}
@@ -154,10 +159,10 @@ body.kararlarda header #ligSec{visibility:hidden}
   <!-- MAÇLAR -->
   <!-- KARARLAR (sade ana ekran) -->
   <section class="ekran aktif" id="e-kararlar">
-    <div class="kart kucuk" style="line-height:1.6">
-      <b style="color:var(--beyaz)">Nasıl çalışır?</b> Bilyoner ekran görüntüsünü Claude'a gönder; oranlar buraya gelir.
-      <b class="yesil">✅ OYNA</b> = Bilyoner bu sonuca hak ettiğinden <b>yüksek</b> oran veriyor (ucuz fiyat).
-      Bu, sonucun tutacağı anlamına gelmez; kazanç çok sayıda bahiste ortaya çıkar.
+    <div class="kart kucuk" style="line-height:1.7">
+      🔮 <b style="color:var(--beyaz)">Tahmin</b> = en olası sonuç.<br>
+      🎯 <b style="color:var(--beyaz)">Oynayacaksan</b> = Bilyoner oranlarına göre parana en iyi bakan seçenek.<br>
+      💎 <b style="color:var(--beyaz)">Fırsat</b> = Bilyoner'in gereğinden yüksek oran verdiği nadir bahis. Tutacağı kesin değil, ama uzun vadede kazandıran budur.
     </div>
     <div class="durum" id="kararDurum"></div>
     <div id="kararListe"></div>
@@ -311,7 +316,7 @@ const DEGER_MAX_ORAN = 7.0, DEGER_MIN_OLAS = 0.15; // uç sürpriz oranları ele
 const degerMi = (p, o) => o > 1 && o <= DEGER_MAX_ORAN && p >= DEGER_MIN_OLAS && p*o-1 > DEGER_ESIGI;
 const ONBELLEK_SURE = 3*3600e3;    // 3 saat
 const ONCEKI_SEZON_AGIRLIK = 0.4;  // geçen sezon maçları bu ağırlıkla modele katılır
-const SURUM = 'v3.0';
+const SURUM = 'v3.1';
 const KES_DELTA = 0.02, KES_MAX_ORAN = 5.0;      // keskin referansa göre en az %2 değer, oran ≤ 5
 const KELLY_KESIR = 0.25, KELLY_TAVAN = 0.03;     // ¼ Kelly, kasanın en fazla %3'ü
 const VARSAYILAN_ORANSIZ = {a:0.5, p:0.5, m:0};
@@ -1120,28 +1125,34 @@ function kararHesap(f){
 function kararKartHtml(f, i){
   const H = kararHesap(f), lig = LIGLER.find(l => l.id===f.lig);
   const saat = new Date(f.t).toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'});
-  const ad = [f.ev, 'Beraberlik', f.dep];
-  let kim = '';
-  if(H.olas){ const j = H.olas.indexOf(Math.max(...H.olas));
-    kim = `Kim kazanır? <b>${j===1 ? 'Beraberlik' : esc(ad[j])} %${Math.round(H.olas[j]*100)}</b> · 1 %${Math.round(H.olas[0]*100)} · X %${Math.round(H.olas[1]*100)} · 2 %${Math.round(H.olas[2]*100)}`; }
-  let karar;
-  if(basladi(f)) karar = `<div class="kp yok">⏱️ Maç başladı · karar sadece maç öncesi için</div>`;
-  else if(!f.bil) karar = `<div class="kp yok">Bilyoner oranı girilmedi</div>`;
-  else if(!H.S.length) karar = `<div class="kp yok">⏳ Karar için referans oran bekleniyor${['E0','E1','E2','E3','EC','SP1','SP2','I1','I2','D1','D2','F1','F2','T1','N1','P1','B1','G1','SC0','SC1','SC2','SC3'].includes(f.lig) ? ' (Betfair oranları maç günü öğleden sonra gelir)' : ''}</div>`;
-  else if(H.deger.length){ const x = H.deger[0];
-    karar = `<div class="kp oyna"><span>✅ OYNA: ${esc(x.ad==='1'?f.ev:x.ad==='2'?f.dep:x.ad)} (${x.ad}) @${x.sen.toFixed(2)}</span><small>değer +%${(x.senEv*100).toFixed(1)}<br>önerilen ${kellyMiktar(x.p, x.sen)}</small></div>`; }
-  else { const x = H.enAz;
-    karar = `<div class="kp oynama"><span>❌ OYNAMA</span><small>${x ? (x.senEv > KES_DELTA && x.sen > KES_MAX_ORAN ? `${x.ad} @${x.sen.toFixed(2)} artıda (+%${(x.senEv*100).toFixed(0)}) ama oran 5'in üstü: çok riskli` : `en az kayıplı: ${x.ad} @${x.sen.toFixed(2)} (${x.senEv>0?'+':''}${(x.senEv*100).toFixed(0)}%)`) : 'değer yok'}</small></div>`; }
-  const tablo = H.S.filter(y => y.sen).map(y => `<tr><td>${y.ad}</td><td>${y.sen.toFixed(2)}</td><td>${minOran(y.p).toFixed(2)}</td><td class="${y.senEv>0?'yesil':'kirmizi'}">${y.senEv>0?'+':''}${(y.senEv*100).toFixed(0)}%</td><td>${y.senDeger?'✅':'❌'}</td></tr>`).join('');
-  const marj = f.bil && f.bil['1X2'].every(x=>x) ? `Bilyoner marjı %${((f.bil['1X2'].reduce((a,o)=>a+1/o,0)-1)*100).toFixed(1)}` : '';
-  const oynaBtn = H.deger.length && !basladi(f) ? `<button class="mini" style="margin-top:8px;width:100%" data-kdef="${i}">📒 Oynadım, deftere yaz</button>` : '';
+  const isim = x => x.ad==='1' ? f.ev : x.ad==='2' ? f.dep : x.ad==='X' ? 'Beraberlik' : x.ad;
+  const satir = (e, n, v) => `<div class="ks"><span class="e">${e}</span><span class="n">${n}</span><span class="v">${v}</span></div>`;
+  // 🔮 Tahmin
+  let tahmin = '—';
+  if(H.olas){ const j = H.olas.indexOf(Math.max(...H.olas)); const ad = [f.ev, 'Beraberlik', f.dep][j];
+    tahmin = `${esc(ad)}${j===1 ? '' : ' kazanır'} <span style="color:var(--gri);font-weight:600">(%${Math.round(H.olas[j]*100)})</span>`; }
+  let ic;
+  if(basladi(f)) ic = satir('🔮','Tahmin', tahmin) + `<div class="kp yok" style="margin-top:6px">⏱️ Maç başladı</div>`;
+  else if(!f.bil) ic = satir('🔮','Tahmin', tahmin) + `<div class="kp yok" style="margin-top:6px">Bilyoner oranı girilmedi</div>`;
+  else if(!H.S.length) ic = satir('🔮','Tahmin', tahmin) + satir('🎯','Oynayacaksan','<span style="color:var(--gri);font-weight:600">bekleniyor</span>')
+      + `<div class="kp yok" style="margin-top:6px">⏳ Karar için referans oran bekleniyor${LIGLER.some(l=>l.id===f.lig && l.tip==='ana') ? ' (maç günü öğleden sonra gelir)' : ''}</div>`;
+  else {
+    // 🎯 Oynayacaksan: fırsat varsa o; yoksa makul oranlı (≤5) seçenekler içinde en az kayıplı
+    const makul = H.S.filter(y => y.sen && y.sen <= KES_MAX_ORAN);
+    const hedef = H.deger[0] || (makul.length ? makul.reduce((a,b) => b.senEv > a.senEv ? b : a) : null);
+    ic = satir('🔮','Tahmin', tahmin)
+      + satir('🎯','Oynayacaksan', hedef ? `${esc(isim(hedef))}${hedef.pazar==='OU'?'':''} <span style="color:var(--gri);font-weight:600">(oran ${hedef.sen.toFixed(2)})</span>` : '<span style="color:var(--gri);font-weight:600">makul seçenek yok</span>')
+      + satir('💎','Fırsat', H.deger.length ? `<span class="yesil">✅ VAR: ${esc(isim(H.deger[0]))} @${H.deger[0].sen.toFixed(2)}</span>` : '<span class="kirmizi">Yok</span>');
+  }
+  const tablo = H.S.filter(y => y.sen).map(y => `<tr><td>${esc(isim(y))}</td><td>${y.sen.toFixed(2)}</td><td>${minOran(y.p).toFixed(2)}</td><td class="${y.senEv>0?'yesil':'kirmizi'}">${y.senEv>0?'+':''}${(y.senEv*100).toFixed(0)} TL</td><td>${y.senDeger?'✅':'❌'}</td></tr>`).join('');
+  const marj = f.bil && f.bil['1X2'].every(x=>x) ? `Bilyoner bu maçta %${((f.bil['1X2'].reduce((a,o)=>a+1/o,0)-1)*100).toFixed(0)} pay kesiyor` : '';
+  const oynaBtn = H.deger.length && !basladi(f) ? `<button class="mini" style="margin-top:8px;width:100%" data-kdef="${i}">📒 Fırsatı oynadım, deftere yaz (önerilen ${kellyMiktar(H.deger[0].p, H.deger[0].sen)})</button>` : '';
   return `<div class="kk" data-kk="${i}">
     <div class="lig"><span>${lig ? lig.ad : esc(f.lig)}</span><span>${saat}</span></div>
     <div class="tk">${esc(f.ev)} – ${esc(f.dep)}</div>
-    ${kim ? `<div class="kim">${kim}</div>` : ''}
-    ${karar}
-    <div class="kdetay">${tablo ? `<table class="ktablo"><tr><td>Seçenek</td><td>Bilyoner</td><td>En az</td><td>Getiri</td><td></td></tr>${tablo}</table>` : ''}
-      <div class="kucuk" style="margin-top:6px">${marj}${H.olasKaynak ? ' · Olasılık kaynağı: ' + esc(H.olasKaynak) : ''}</div>${oynaBtn}</div>
+    ${ic}
+    <div class="kdetay">${tablo ? `<div class="kucuk" style="margin-bottom:4px">Ayrıntı: Bilyoner oranı "En az" sayısına ulaşırsa fırsat sayılır.</div><table class="ktablo"><tr><td>Seçenek</td><td>Bilyoner</td><td>En az</td><td>100 TL'de ort.</td><td></td></tr>${tablo}</table>` : ''}
+      <div class="kucuk" style="margin-top:6px">${marj}${H.olasKaynak ? ' · Tahmin kaynağı: ' + esc(H.olasKaynak) : ''}</div>${oynaBtn}</div>
   </div>`;
 }
 function kararlarCiz(){
@@ -1154,7 +1165,7 @@ function kararlarCiz(){
   kararVeri.forEach((f,i) => { const g = gunAd(f.t); if(g!==son){ h += `<div class="kgun">${g}</div>`; son = g; } h += kararKartHtml(f, i); });
   el.innerHTML = h;
   const oyna = kararVeri.filter(f => !basladi(f) && kararHesap(f).deger.length).length;
-  $('kararDurum').textContent = `${kararVeri.length} maç · ${oyna} ✅ OYNA · ayrıntı için karta dokun`;
+  $('kararDurum').textContent = `${kararVeri.length} maç · ${oyna} fırsat · ayrıntı için karta dokun`;
   el.querySelectorAll('[data-kk]').forEach(k => k.onclick = () => k.classList.toggle('acik'));
   el.querySelectorAll('[data-kdef]').forEach(b => b.onclick = ev => { ev.stopPropagation();
     const f = kararVeri[+b.dataset.kdef], x = kararHesap(f).deger[0]; const d = defterOku();
