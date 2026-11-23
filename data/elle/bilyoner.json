@@ -1,0 +1,326 @@
+{
+ "aciklama": "Elle girilen oranlar. bil = Bilyoner (kullanıcının ekran görüntüleri, 23.11.2026). ref = uluslararası referans 1X2 oranları (Betfair verisi olmayan maçlar için). Yeni maçlar aynı biçimde eklenir: lig, tarih (YYYY-AA-GG), ev, dep.",
+ "maclar": [
+  {
+   "tarih": "2026-11-24",
+   "ev": "Bodo/Glimt",
+   "dep": "LASK Linz",
+   "bil": {
+    "1X2": [
+     1.33,
+     4.57,
+     4.7
+    ],
+    "OU": [
+     1.14,
+     3.28
+    ]
+   },
+   "ref": {
+    "1X2": [
+     1.61,
+     5.0,
+     5.56
+    ],
+    "kaynak": "Forza Football piyasa olasılığı (%62/%20/%18)"
+   },
+   "lig": "UCL"
+  },
+  {
+   "tarih": "2026-11-24",
+   "ev": "Galatasaray",
+   "dep": "Aston Villa",
+   "bil": {
+    "1X2": [
+     2.53,
+     3.44,
+     2.0
+    ],
+    "OU": [
+     1.22,
+     2.72
+    ]
+   },
+   "ref": {
+    "1X2": [
+     2.7,
+     4.17,
+     2.5
+    ],
+    "kaynak": "Squawka piyasa olasılığı (%37/%24/%40)"
+   },
+   "lig": "UCL"
+  },
+  {
+   "tarih": "2026-11-24",
+   "ev": "Manchester City",
+   "dep": "Napoli",
+   "bil": {
+    "1X2": [
+     1.12,
+     5.84,
+     8.02
+    ],
+    "OU": [
+     1.17,
+     3.02
+    ]
+   },
+   "lig": "UCL"
+  },
+  {
+   "tarih": "2026-11-24",
+   "ev": "Real Madrid",
+   "dep": "PSV Eindhoven",
+   "bil": {
+    "1X2": [
+     null,
+     8.17,
+     11.35
+    ],
+    "OU": [
+     null,
+     4.62
+    ]
+   },
+   "lig": "UCL"
+  },
+  {
+   "tarih": "2026-11-24",
+   "ev": "Arsenal",
+   "dep": "Borussia Dortmund",
+   "bil": {
+    "1X2": [
+     1.23,
+     4.48,
+     6.6
+    ],
+    "OU": [
+     1.44,
+     2.02
+    ]
+   },
+   "ref": {
+    "1X2": [
+     1.4,
+     5.05,
+     8.2
+    ],
+    "kaynak": "Bethard (Forza Football)"
+   },
+   "lig": "UCL"
+  },
+  {
+   "tarih": "2026-11-24",
+   "ev": "Slovan Bratislava",
+   "dep": "Real Betis",
+   "bil": {
+    "1X2": [
+     9.07,
+     5.99,
+     1.1
+    ],
+    "OU": [
+     1.21,
+     2.81
+    ]
+   },
+   "lig": "UCL"
+  },
+  {
+   "tarih": "2026-11-24",
+   "ev": "RB Leipzig",
+   "dep": "Lens",
+   "bil": {
+    "1X2": [
+     1.22,
+     5.07,
+     5.85
+    ],
+    "OU": [
+     1.15,
+     3.1
+    ]
+   },
+   "lig": "UCL"
+  },
+  {
+   "tarih": "2026-11-24",
+   "ev": "Feyenoord Rotterdam",
+   "dep": "FC Porto",
+   "bil": {
+    "1X2": [
+     2.58,
+     3.25,
+     2.03
+    ],
+    "OU": [
+     1.41,
+     2.08
+    ]
+   },
+   "ref": {
+    "1X2": [
+     2.92,
+     3.8,
+     2.44
+    ],
+    "kaynak": "Linebet (Ratingbet karşılaştırması)"
+   },
+   "lig": "UCL"
+  },
+  {
+   "tarih": "2026-11-24",
+   "ev": "Como",
+   "dep": "AEK Athens",
+   "bil": {
+    "1X2": [
+     1.11,
+     5.85,
+     8.48
+    ],
+    "OU": [
+     1.19,
+     2.9
+    ]
+   },
+   "lig": "UCL"
+  },
+  {
+   "lig": "E1",
+   "tarih": "2026-11-24",
+   "ev": "Norwich",
+   "dep": "QPR",
+   "bil": {
+    "1X2": [
+     1.77,
+     3.34,
+     3.1
+    ],
+    "OU": [
+     1.46,
+     2.0
+    ]
+   }
+  },
+  {
+   "lig": "E1",
+   "tarih": "2026-11-24",
+   "ev": "Middlesbrough",
+   "dep": "Swansea",
+   "bil": {
+    "1X2": [
+     1.28,
+     4.39,
+     5.7
+    ],
+    "OU": [
+     1.34,
+     2.26
+    ]
+   }
+  },
+  {
+   "lig": "E1",
+   "tarih": "2026-11-24",
+   "ev": "Charlton",
+   "dep": "Lincoln",
+   "bil": {
+    "1X2": [
+     2.38,
+     2.97,
+     2.32
+    ],
+    "OU": [
+     1.79,
+     1.6
+    ]
+   }
+  },
+  {
+   "lig": "E1",
+   "tarih": "2026-11-24",
+   "ev": "Cardiff",
+   "dep": "Preston",
+   "bil": {
+    "1X2": [
+     1.34,
+     4.22,
+     4.92
+    ],
+    "OU": [
+     1.28,
+     2.5
+    ]
+   }
+  },
+  {
+   "lig": "E1",
+   "tarih": "2026-11-24",
+   "ev": "Portsmouth",
+   "dep": "West Ham",
+   "bil": {
+    "1X2": [
+     3.52,
+     3.3,
+     1.67
+    ],
+    "OU": [
+     1.57,
+     1.81
+    ]
+   }
+  },
+  {
+   "lig": "E1",
+   "tarih": "2026-11-24",
+   "ev": "Sheffield United",
+   "dep": "Southampton",
+   "bil": {
+    "1X2": [
+     2.26,
+     3.11,
+     2.37
+    ],
+    "OU": [
+     1.5,
+     1.92
+    ]
+   }
+  },
+  {
+   "lig": "E1",
+   "tarih": "2026-11-24",
+   "ev": "Bristol City",
+   "dep": "Wrexham",
+   "bil": {
+    "1X2": [
+     2.12,
+     2.95,
+     2.66
+    ],
+    "OU": [
+     1.85,
+     1.55
+    ]
+   }
+  },
+  {
+   "lig": "E1",
+   "tarih": "2026-11-24",
+   "ev": "Wolves",
+   "dep": "Derby",
+   "bil": {
+    "1X2": [
+     1.16,
+     5.0,
+     7.98
+    ],
+    "OU": [
+     1.38,
+     2.16
+    ]
+   }
+  }
+ ]
+}
