@@ -117,6 +117,21 @@ nav button.aktif{color:var(--vurgu)}
 .ktablo{width:100%;margin-top:8px;font-size:13px}
 .ktablo td{padding:5px 3px;border-bottom:1px solid var(--border);text-align:center}
 .ktablo td:first-child{text-align:left;font-weight:700}
+body:not(.gelismis-acik) nav .gelismis{display:none}
+body.kararlarda header #ligSec{visibility:hidden}
+.kgun{font-size:13px;font-weight:800;color:var(--gri);margin:14px 4px 6px;text-transform:uppercase}
+.kk{background:var(--kart);border:1px solid var(--border);border-radius:14px;padding:12px;margin-bottom:9px}
+.kk .lig{font-size:12px;color:var(--gri);display:flex;justify-content:space-between}
+.kk .tk{font-size:16px;font-weight:800;margin:4px 0 6px}
+.kk .kim{font-size:13px;color:var(--gri);margin-bottom:8px}
+.kk .kim b{color:var(--beyaz)}
+.kp{border-radius:11px;padding:10px 12px;font-size:15px;font-weight:800;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.kp.oyna{background:#12361d;border:2px solid #2ea043;color:#56d364}
+.kp.oynama{background:#2a1215;border:1px solid #5c2026;color:#ff7b72}
+.kp.yok{background:var(--kart2);border:1px dashed var(--border);color:var(--gri);font-weight:600;font-size:13px}
+.kp small{font-weight:600;font-size:12px;opacity:.9;text-align:right}
+.kdetay{display:none;margin-top:8px}
+.kk.acik .kdetay{display:block}
 .esikler{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
 .esikler span{background:var(--kart2);border-radius:7px;padding:4px 7px;font-size:12px}
 .esikler span b{color:var(--beyaz)}
@@ -137,7 +152,18 @@ nav button.aktif{color:var(--vurgu)}
   <div class="durum" id="durum"></div>
 
   <!-- MAÇLAR -->
-  <section class="ekran aktif" id="e-maclar">
+  <!-- KARARLAR (sade ana ekran) -->
+  <section class="ekran aktif" id="e-kararlar">
+    <div class="kart kucuk" style="line-height:1.6">
+      <b style="color:var(--beyaz)">Nasıl çalışır?</b> Bilyoner ekran görüntüsünü Claude'a gönder; oranlar buraya gelir.
+      <b class="yesil">✅ OYNA</b> = Bilyoner bu sonuca hak ettiğinden <b>yüksek</b> oran veriyor (ucuz fiyat).
+      Bu, sonucun tutacağı anlamına gelmez; kazanç çok sayıda bahiste ortaya çıkar.
+    </div>
+    <div class="durum" id="kararDurum"></div>
+    <div id="kararListe"></div>
+  </section>
+
+  <section class="ekran" id="e-maclar">
     <div class="sekme"><button id="gKolay">✅ Kolay görünüm</button><button id="gAyrinti" class="ghost">Ayrıntılı</button></div>
     <div id="macListe"></div>
   </section>
@@ -204,6 +230,8 @@ nav button.aktif{color:var(--vurgu)}
       </div>
     </div>
     <div class="kart">
+      <h3>Görünüm</h3>
+      <label style="display:flex;gap:10px;align-items:center;font-size:14px;margin-bottom:12px"><input type="checkbox" id="gelismisInp" style="width:22px;height:22px"> Gelişmiş mod (Maçlar, Tahmin, Puan, Başarı sekmeleri)</label>
       <h3>Uygulama</h3>
       <p class="kucuk"><b>Ana ekrana ekleme:</b> Android/Chrome'da ⋮ menü → <i>Ana ekrana ekle</i>. iPhone/Safari'de Paylaş → <i>Ana Ekrana Ekle</i>.</p>
       <button id="indirBtn" class="ghost" style="width:100%;margin-top:10px">⬇ Uygulama dosyasını indir (HTML)</button>
@@ -219,12 +247,13 @@ nav button.aktif{color:var(--vurgu)}
 </main>
 
 <nav>
-  <button data-e="maclar" class="aktif"><i>📅</i>Maçlar</button>
+  <button data-e="kararlar" class="aktif"><i>✅</i>Kararlar</button>
+  <button data-e="maclar" class="gelismis"><i>📅</i>Maçlar</button>
   <button data-e="canli"><i>🔴</i>Canlı</button>
-  <button data-e="tahmin"><i>🎯</i>Tahmin</button>
-  <button data-e="puan"><i>🏆</i>Puan</button>
-  <button data-e="basari"><i>📈</i>Başarı</button>
-  <button data-e="deney"><i>🧪</i>Deney</button>
+  <button data-e="tahmin" class="gelismis"><i>🎯</i>Tahmin</button>
+  <button data-e="puan" class="gelismis"><i>🏆</i>Puan</button>
+  <button data-e="basari" class="gelismis"><i>📈</i>Başarı</button>
+  <button data-e="deney"><i>📒</i>Defter</button>
   <button data-e="ayar"><i>⚙️</i>Ayarlar</button>
 </nav>
 
@@ -282,7 +311,7 @@ const DEGER_MAX_ORAN = 7.0, DEGER_MIN_OLAS = 0.15; // uç sürpriz oranları ele
 const degerMi = (p, o) => o > 1 && o <= DEGER_MAX_ORAN && p >= DEGER_MIN_OLAS && p*o-1 > DEGER_ESIGI;
 const ONBELLEK_SURE = 3*3600e3;    // 3 saat
 const ONCEKI_SEZON_AGIRLIK = 0.4;  // geçen sezon maçları bu ağırlıkla modele katılır
-const SURUM = 'v2.1';
+const SURUM = 'v3.0';
 const KES_DELTA = 0.02, KES_MAX_ORAN = 5.0;      // keskin referansa göre en az %2 değer, oran ≤ 5
 const KELLY_KESIR = 0.25, KELLY_TAVAN = 0.03;     // ¼ Kelly, kasanın en fazla %3'ü
 const VARSAYILAN_ORANSIZ = {a:0.5, p:0.5, m:0};
@@ -623,7 +652,7 @@ const PAZAR_AD = {'1X2':['1','X','2'], 'OU':['Üst 2.5','Alt 2.5']};
 // Adil olasılık: önce Betfair Borsası (marjı küçük ve makulse), yoksa piyasa ortalaması (zayıf referans)
 function adilOlas(k, pazar){
   if(!k) return null;
-  if(k.ref && k.ref[pazar]){ const r = devig(k.ref[pazar]); if(r && r.ov >= 0 && r.ov <= 0.08) return {p:r.p, kaynak:k.refKaynak || 'elle referans', zayif:false}; }
+  if(k.ref && k.ref[pazar]){ const r = devig(k.ref[pazar]); if(r && r.ov >= 0 && r.ov <= 0.10) return {p:r.p, kaynak:k.refKaynak || 'elle referans', zayif:false}; }
   const bf = devig(pazar==='1X2' ? k.bfe : k.ouBfe);
   if(bf && bf.ov >= 0 && bf.ov <= 0.06) return {p:bf.p, kaynak:'Betfair Borsası', zayif:false};
   const av = devig(pazar==='1X2' ? k.avg : k.ouAvg);
@@ -1054,6 +1083,85 @@ async function avrupaYukle(lig, zorla){
   return {avrupa:true, fikstur, sonuclar:[], onceki:[], sezonAd:'', bilgi:[{kaynak: olaylar.kaynak || '—', t:simdi}], olaylar};
 }
 
+// ════════════════════════════════════════════════════════════
+//  KARARLAR — Bilyoner oranları (data/elle/bilyoner.json) × adil olasılık (Betfair / referans)
+// ════════════════════════════════════════════════════════════
+let kararVeri = [];
+async function kararlarYukle(zorla){
+  $('kararDurum').innerHTML = '<span class="yukleniyor"></span>Kararlar hazırlanıyor…';
+  if(zorla) elleVeri = null;
+  const elle = await elleOku();
+  let fik = [];
+  try{ const r = await veriCek(`${BASE}fixtures.csv`, /^Div,/, zorla);
+       fik = csvOku(r.metin).map(x => { const m = anaSatirCevir(x); if(m) m.div = x.Div; return m; }).filter(Boolean); }catch(e){}
+  kararVeri = elle.map(m => {
+    const t = Date.parse(`${m.tarih}T${m.saat||'20:00'}:00+03:00`);
+    const f = {t, ev:m.ev, dep:m.dep, lig:m.lig, k:null, oran:null};
+    const fx = fik.find(x => x.div===m.lig && Math.abs(x.t - t) < 8*3600e3 && adBenzer(x.ev, m.ev) >= 0.6 && adBenzer(x.dep, m.dep) >= 0.6);
+    if(fx){ f.k = fx.k; f.oran = fx.oran; }
+    if(m.ref){ f.k = {...(f.k||{}), ref:{'1X2': m.ref['1X2'], 'OU': m.ref['OU']}, refKaynak: m.ref.kaynak}; }
+    f.bil = m.bil ? {'1X2': m.bil['1X2'] || [null,null,null], 'OU': m.bil['OU'] || [null,null]} : null;
+    return f;
+  }).filter(f => isFinite(f.t) && f.t > Date.now() - 6*3600e3).sort((a,b) => a.t - b.t);
+  kararlarCiz();
+}
+function kararHesap(f){
+  const S = f.bil ? secenekler(f, f.bil).filter(x => !x.zayif) : [];
+  // kim kazanır: adil olasılık; yoksa Bilyoner'in marjı ayıklanmış olasılığı
+  let olas = null, olasKaynak = '';
+  const s1 = S.filter(x => x.pazar==='1X2');
+  if(s1.length === 3){ olas = s1.map(x => x.p); olasKaynak = s1[0].kaynak; }
+  else if(f.bil && f.bil['1X2'].every(x => x)){ olas = devig(f.bil['1X2']).p; olasKaynak = "Bilyoner'e göre"; }
+  const deger = S.filter(x => x.senDeger).sort((a,b) => b.senEv - a.senEv);
+  const oynanan = S.filter(x => x.sen);
+  const enAz = oynanan.length ? oynanan.reduce((a,b) => b.senEv > a.senEv ? b : a) : null;
+  return {S, olas, olasKaynak, deger, enAz};
+}
+function kararKartHtml(f, i){
+  const H = kararHesap(f), lig = LIGLER.find(l => l.id===f.lig);
+  const saat = new Date(f.t).toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'});
+  const ad = [f.ev, 'Beraberlik', f.dep];
+  let kim = '';
+  if(H.olas){ const j = H.olas.indexOf(Math.max(...H.olas));
+    kim = `Kim kazanır? <b>${j===1 ? 'Beraberlik' : esc(ad[j])} %${Math.round(H.olas[j]*100)}</b> · 1 %${Math.round(H.olas[0]*100)} · X %${Math.round(H.olas[1]*100)} · 2 %${Math.round(H.olas[2]*100)}`; }
+  let karar;
+  if(basladi(f)) karar = `<div class="kp yok">⏱️ Maç başladı · karar sadece maç öncesi için</div>`;
+  else if(!f.bil) karar = `<div class="kp yok">Bilyoner oranı girilmedi</div>`;
+  else if(!H.S.length) karar = `<div class="kp yok">⏳ Karar için referans oran bekleniyor${['E0','E1','E2','E3','EC','SP1','SP2','I1','I2','D1','D2','F1','F2','T1','N1','P1','B1','G1','SC0','SC1','SC2','SC3'].includes(f.lig) ? ' (Betfair oranları maç günü öğleden sonra gelir)' : ''}</div>`;
+  else if(H.deger.length){ const x = H.deger[0];
+    karar = `<div class="kp oyna"><span>✅ OYNA: ${esc(x.ad==='1'?f.ev:x.ad==='2'?f.dep:x.ad)} (${x.ad}) @${x.sen.toFixed(2)}</span><small>değer +%${(x.senEv*100).toFixed(1)}<br>önerilen ${kellyMiktar(x.p, x.sen)}</small></div>`; }
+  else { const x = H.enAz;
+    karar = `<div class="kp oynama"><span>❌ OYNAMA</span><small>${x ? (x.senEv > KES_DELTA && x.sen > KES_MAX_ORAN ? `${x.ad} @${x.sen.toFixed(2)} artıda (+%${(x.senEv*100).toFixed(0)}) ama oran 5'in üstü: çok riskli` : `en az kayıplı: ${x.ad} @${x.sen.toFixed(2)} (${x.senEv>0?'+':''}${(x.senEv*100).toFixed(0)}%)`) : 'değer yok'}</small></div>`; }
+  const tablo = H.S.filter(y => y.sen).map(y => `<tr><td>${y.ad}</td><td>${y.sen.toFixed(2)}</td><td>${minOran(y.p).toFixed(2)}</td><td class="${y.senEv>0?'yesil':'kirmizi'}">${y.senEv>0?'+':''}${(y.senEv*100).toFixed(0)}%</td><td>${y.senDeger?'✅':'❌'}</td></tr>`).join('');
+  const marj = f.bil && f.bil['1X2'].every(x=>x) ? `Bilyoner marjı %${((f.bil['1X2'].reduce((a,o)=>a+1/o,0)-1)*100).toFixed(1)}` : '';
+  const oynaBtn = H.deger.length && !basladi(f) ? `<button class="mini" style="margin-top:8px;width:100%" data-kdef="${i}">📒 Oynadım, deftere yaz</button>` : '';
+  return `<div class="kk" data-kk="${i}">
+    <div class="lig"><span>${lig ? lig.ad : esc(f.lig)}</span><span>${saat}</span></div>
+    <div class="tk">${esc(f.ev)} – ${esc(f.dep)}</div>
+    ${kim ? `<div class="kim">${kim}</div>` : ''}
+    ${karar}
+    <div class="kdetay">${tablo ? `<table class="ktablo"><tr><td>Seçenek</td><td>Bilyoner</td><td>En az</td><td>Getiri</td><td></td></tr>${tablo}</table>` : ''}
+      <div class="kucuk" style="margin-top:6px">${marj}${H.olasKaynak ? ' · Olasılık kaynağı: ' + esc(H.olasKaynak) : ''}</div>${oynaBtn}</div>
+  </div>`;
+}
+function kararlarCiz(){
+  const el = $('kararListe');
+  if(!kararVeri.length){ el.innerHTML = '<div class="bos">Henüz oran yok.<br><br>Bilyoner ekran görüntüsünü Claude\'a gönder, oranlar buraya gelsin.</div>'; $('kararDurum').textContent=''; return; }
+  const gunAd = t => { const g = new Date(t).toLocaleDateString('tr-TR',{weekday:'long', day:'numeric', month:'long'});
+    const bugun = new Date().toDateString(), yarin = new Date(Date.now()+86400e3).toDateString(), d = new Date(t).toDateString();
+    return d===bugun ? 'Bugün · ' + g : d===yarin ? 'Yarın · ' + g : g; };
+  let h = '', son = '';
+  kararVeri.forEach((f,i) => { const g = gunAd(f.t); if(g!==son){ h += `<div class="kgun">${g}</div>`; son = g; } h += kararKartHtml(f, i); });
+  el.innerHTML = h;
+  const oyna = kararVeri.filter(f => !basladi(f) && kararHesap(f).deger.length).length;
+  $('kararDurum').textContent = `${kararVeri.length} maç · ${oyna} ✅ OYNA · ayrıntı için karta dokun`;
+  el.querySelectorAll('[data-kk]').forEach(k => k.onclick = () => k.classList.toggle('acik'));
+  el.querySelectorAll('[data-kdef]').forEach(b => b.onclick = ev => { ev.stopPropagation();
+    const f = kararVeri[+b.dataset.kdef], x = kararHesap(f).deger[0]; const d = defterOku();
+    d.push({id:Date.now()+'-r', lig:f.lig, ev:f.ev, dep:f.dep, t:f.t, pazar:x.pazar, i:x.i, ad:x.ad, oran:x.sen, miktar:kellyMiktar(x.p, x.sen), pAdil:+x.p.toFixed(4), kayit:Date.now()});
+    defterYaz(d); b.textContent='✓ Deftere yazıldı'; b.disabled=true; deneyCiz(); });
+}
+
 async function yukle(zorla){
   const lig = LIGLER.find(l=>l.id===$('ligSec').value) || LIGLER[0];
   aktifLig = lig; ls('slt_lig', lig.id);
@@ -1444,6 +1552,7 @@ function basariCiz(){
 }
 
 function ekranAc(ad){
+  document.body.classList.toggle('kararlarda', ad==='kararlar');
   if(ad==='canli' && (!canliSekmeVeri || Date.now()-canliSekmeZaman > 30e3)) setTimeout(canliSekmeYukle, 0);
   document.querySelectorAll('.ekran').forEach(e=>e.classList.toggle('aktif', e.id==='e-'+ad));
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('aktif', b.dataset.e===ad));
@@ -1453,7 +1562,7 @@ function ekranAc(ad){
 // ── olaylar ──
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => ekranAc(b.dataset.e));
 $('ligSec').onchange = () => { yukle(false); canliSekmeVeri = null; if($('e-canli').classList.contains('aktif')) canliSekmeYukle(); };
-$('yenileBtn').onclick = () => yukle(true);
+$('yenileBtn').onclick = () => document.body.classList.contains('kararlarda') ? kararlarYukle(true) : yukle(true);
 $('hesaplaBtn').onclick = tahminCiz;
 ['evSec','depSec'].forEach(id => $(id).onchange = () => {
   const f = D && D.fikstur.find(f=>f.ev===$('evSec').value && f.dep===$('depSec').value);
@@ -1482,7 +1591,13 @@ $('gAyrinti').onclick = () => { ls('slt_kolay', false); maclariCiz(); canliCiz()
 $('cSecili').onclick = () => { canliMod='secili'; $('cSecili').className=''; $('cOne').className='ghost'; canliSekmeYukle(); };
 $('cOne').onclick = () => { canliMod='one'; $('cOne').className=''; $('cSecili').className='ghost'; canliSekmeYukle(); };
 if(location.protocol==='https:') setTimeout(surumKontrol, 1500);
+document.body.classList.toggle('gelismis-acik', ls('slt_gelismis')===true);
+$('gelismisInp').checked = ls('slt_gelismis')===true;
+$('gelismisInp').onchange = () => { ls('slt_gelismis', $('gelismisInp').checked); document.body.classList.toggle('gelismis-acik', $('gelismisInp').checked); };
+document.body.classList.add('kararlarda');
 ligListesiDoldur();
+kararlarYukle(false);
+setInterval(() => { if(!document.hidden && $('e-kararlar').classList.contains('aktif')) kararlarCiz(); }, 60e3);
 yukle(false);
 </script>
 </body>

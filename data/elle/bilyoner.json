@@ -1,5 +1,5 @@
 {
- "aciklama": "Elle girilen oranlar. bil = Bilyoner (kullanıcının ekran görüntüleri, 23.11.2026). ref = uluslararası referans 1X2 oranları (Betfair verisi olmayan maçlar için). Yeni maçlar aynı biçimde eklenir: lig, tarih (YYYY-AA-GG), ev, dep.",
+ "aciklama": "Elle girilen oranlar (Claude, kullanıcının Bilyoner ekran görüntülerinden doldurur). Alanlar: lig (uygulamadaki kod: T1, E0, E1, SP1, I1, D1, F1, UCL, UEL...), tarih (YYYY-AA-GG, Türkiye), saat (SS:DD, Türkiye), ev, dep, bil {1X2:[1,X,2], OU:[Üst,Alt]}, isteğe bağlı ref {1X2:[...], kaynak} (Betfair verisi olmayan maçlar için).",
  "maclar": [
   {
    "tarih": "2026-11-24",
@@ -24,7 +24,8 @@
     ],
     "kaynak": "Forza Football piyasa olasılığı (%62/%20/%18)"
    },
-   "lig": "UCL"
+   "lig": "UCL",
+   "saat": "20:45"
   },
   {
    "tarih": "2026-11-24",
@@ -49,7 +50,8 @@
     ],
     "kaynak": "Squawka piyasa olasılığı (%37/%24/%40)"
    },
-   "lig": "UCL"
+   "lig": "UCL",
+   "saat": "20:45"
   },
   {
    "tarih": "2026-11-24",
@@ -74,7 +76,8 @@
      9.0
     ],
     "kaynak": "Wincomparator (bet365 vb.)"
-   }
+   },
+   "saat": "23:00"
   },
   {
    "tarih": "2026-11-24",
@@ -99,7 +102,8 @@
      9.5
     ],
     "kaynak": "Wincomparator"
-   }
+   },
+   "saat": "23:00"
   },
   {
    "tarih": "2026-11-24",
@@ -124,7 +128,8 @@
     ],
     "kaynak": "Bethard (Forza Football)"
    },
-   "lig": "UCL"
+   "lig": "UCL",
+   "saat": "23:00"
   },
   {
    "tarih": "2026-11-24",
@@ -149,7 +154,8 @@
      1.3
     ],
     "kaynak": "Linebet (Ratingbet karşılaştırması)"
-   }
+   },
+   "saat": "23:00"
   },
   {
    "tarih": "2026-11-24",
@@ -174,7 +180,8 @@
      6.0
     ],
     "kaynak": "Wincomparator"
-   }
+   },
+   "saat": "23:00"
   },
   {
    "tarih": "2026-11-24",
@@ -199,7 +206,8 @@
     ],
     "kaynak": "Linebet (Ratingbet karşılaştırması)"
    },
-   "lig": "UCL"
+   "lig": "UCL",
+   "saat": "23:00"
   },
   {
    "tarih": "2026-11-24",
@@ -224,7 +232,8 @@
      10.0
     ],
     "kaynak": "Wincomparator"
-   }
+   },
+   "saat": "23:00"
   },
   {
    "lig": "E1",
@@ -241,7 +250,8 @@
      1.46,
      2.0
     ]
-   }
+   },
+   "saat": "22:45"
   },
   {
    "lig": "E1",
@@ -258,7 +268,8 @@
      1.34,
      2.26
     ]
-   }
+   },
+   "saat": "22:45"
   },
   {
    "lig": "E1",
@@ -275,7 +286,8 @@
      1.79,
      1.6
     ]
-   }
+   },
+   "saat": "22:45"
   },
   {
    "lig": "E1",
@@ -292,7 +304,8 @@
      1.28,
      2.5
     ]
-   }
+   },
+   "saat": "22:45"
   },
   {
    "lig": "E1",
@@ -309,7 +322,8 @@
      1.57,
      1.81
     ]
-   }
+   },
+   "saat": "22:45"
   },
   {
    "lig": "E1",
@@ -326,7 +340,8 @@
      1.5,
      1.92
     ]
-   }
+   },
+   "saat": "22:45"
   },
   {
    "lig": "E1",
@@ -343,7 +358,8 @@
      1.85,
      1.55
     ]
-   }
+   },
+   "saat": "22:45"
   },
   {
    "lig": "E1",
@@ -360,7 +376,8 @@
      1.38,
      2.16
     ]
-   }
+   },
+   "saat": "23:00"
   }
  ]
 }
