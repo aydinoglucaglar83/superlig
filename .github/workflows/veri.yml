@@ -4,6 +4,8 @@ name: Veri guncelle
 on:
   schedule:
     - cron: "17 */3 * * *"
+    # Salı ve Cuma öğleden sonra (UTC 12–21) saatte bir: football-data maç öncesi oranları bu günlerde ekliyor
+    - cron: "47 12-21 * * 2,5"
   workflow_dispatch:
   push:
     branches: [main]
