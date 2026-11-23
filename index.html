@@ -249,7 +249,7 @@ const DEGER_MAX_ORAN = 7.0, DEGER_MIN_OLAS = 0.15; // uç sürpriz oranları ele
 const degerMi = (p, o) => o > 1 && o <= DEGER_MAX_ORAN && p >= DEGER_MIN_OLAS && p*o-1 > DEGER_ESIGI;
 const ONBELLEK_SURE = 3*3600e3;    // 3 saat
 const ONCEKI_SEZON_AGIRLIK = 0.4;  // geçen sezon maçları bu ağırlıkla modele katılır
-const SURUM = 'v1.4.2';
+const SURUM = 'v1.5';
 const KES_DELTA = 0.02, KES_MAX_ORAN = 5.0;      // keskin referansa göre en az %2 değer, oran ≤ 5
 const KELLY_KESIR = 0.25, KELLY_TAVAN = 0.03;     // ¼ Kelly, kasanın en fazla %3'ü
 const VARSAYILAN_ORANSIZ = {a:0.5, p:0.5, m:0};
@@ -727,34 +727,74 @@ function adBenzer(a, b){
   return 2*o/(A.size+B.size);
 }
 const ymd = ms => { const d=new Date(ms); return d.getUTCFullYear()+String(d.getUTCMonth()+1).padStart(2,'0')+String(d.getUTCDate()).padStart(2,'0'); };
+// ── Çoklu canlı skor kaynağı: ESPN (2 adres) → SofaScore → TheSportsDB. Çalışan kaynak hatırlanır. ──
+const SOFA = {T1:52,E0:17,SP1:8,I1:23,D1:35,F1:34,N1:37,P1:238,B1:38,G1:185,E1:18,E2:24,E3:25,SC0:36,SC1:206,D2:44,I2:53,SP2:54,F2:182};
+const TSDB = {T1:4339,E0:4328,SP1:4335,I1:4332,D1:4331,F1:4334,N1:4337,P1:4344,B1:4338,G1:4336,E1:4329,SC0:4330,D2:4399,I2:4394,SP2:4400,F2:4401};
+let espnSonHata = '', canliKaynak = '';
+const gunStr = ms => new Date(ms).toISOString().slice(0,10);
+async function jsonAl(url, ms){ const t = await zamanAsimliFetch(url, ms||8000); return JSON.parse(t); }
 function espnOlaylar(j){
   return (j.events||[]).map(e => { const c=e.competitions&&e.competitions[0]; if(!c) return null;
     const h=c.competitors.find(x=>x.homeAway==='home'), a=c.competitors.find(x=>x.homeAway==='away'); if(!h||!a) return null;
     const st=(e.status||c.status||{}); const ty=st.type||{};
-    return {id:e.id, t:Date.parse(e.date), ev:h.team.displayName, dep:a.team.displayName, evK:h.team.shortDisplayName, depK:a.team.shortDisplayName,
+    return {id:'e'+e.id, t:Date.parse(e.date), ev:h.team.displayName, dep:a.team.displayName, evK:h.team.shortDisplayName, depK:a.team.shortDisplayName,
             hs:+h.score||0, as:+a.score||0, durum:ty.state, detay:ty.shortDetail||'', dakika:st.displayClock||''}; }).filter(Boolean);
 }
-let espnSonHata = '';
-async function espnJson(url){
-  const oku = u => zamanAsimliFetch(u, 8000).then(t => { const o=JSON.parse(t); if(!o.events) throw new Error('events yok'); return o; });
-  const ozel0 = (ls('slt_proxy')||'').trim();
-  if(ozel0){ try{ return await Promise.any([oku(url), oku(ozel0+encodeURIComponent(url))]); }catch(e){} }   // kendi Worker'ın varsa onunla yarıştır
-  try{ return await oku(url); }
-  catch(e){ espnSonHata = 'doğrudan: ' + (e && (e.name==='AbortError' ? 'zaman aşımı' : e.message) || e); }
-  const dene = ['https://api.allorigins.win/raw?url='+encodeURIComponent(url), 'https://corsproxy.io/?url='+encodeURIComponent(url),
-                'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(url)];
-  const ozel = (ls('slt_proxy')||'').trim(); if(ozel) dene.unshift(ozel+encodeURIComponent(url));
-  try{ return await Promise.any(dene.map(oku)); }
-  catch(e){ espnSonHata += ' · proxy: başarısız'; throw e; }
+function espnKaynak(host){
+  return async lig => { const slug = ESPN[lig]; if(!slug) return [];
+    const kok = `https://${host}/apis/site/v2/sports/soccer/${slug}/scoreboard`, simdi = Date.now();
+    const r = await Promise.allSettled([kok+'?dates='+ymd(simdi), kok+'?dates='+ymd(simdi-86400e3)].map(u=>jsonAl(u)));
+    const ok = r.filter(x=>x.status==='fulfilled');
+    if(!ok.length) throw (r[0].reason || new Error('yok'));
+    return ok.flatMap(x=>espnOlaylar(x.value)); };
 }
-// ESPN tek gün kabul ediyor (?dates=YYYYMMDD; aralık biçimi 400 veriyor): dün + bugün (UTC) paralel çekilir
-async function espnCek(slug){
-  const kok = `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard`, simdi = Date.now();
-  const r = await Promise.allSettled([kok+'?dates='+ymd(simdi), kok+'?dates='+ymd(simdi-86400e3)].map(espnJson));
-  let ev = r.filter(x=>x.status==='fulfilled').flatMap(x=>espnOlaylar(x.value));
-  if(!ev.length){ try{ ev = espnOlaylar(await espnJson(kok)); }catch(e){} }
-  const tek = new Map(); ev.forEach(e => tek.set(e.id || (e.ev+e.t), e));
-  return [...tek.values()];
+async function sofaKaynak(lig){
+  const id = SOFA[lig]; if(!id) return [];
+  const j = await jsonAl(`https://api.sofascore.com/api/v1/sport/football/scheduled-events/${gunStr(Date.now())}`, 10000);
+  const simdiSn = Date.now()/1000;
+  return (j.events||[]).filter(e => e.tournament && e.tournament.uniqueTournament && e.tournament.uniqueTournament.id===id).map(e => {
+    const tip = e.status && e.status.type, kod = e.status && e.status.code;
+    const durum = tip==='inprogress' ? 'in' : tip==='finished' ? 'post' : 'pre';
+    let detay = '';
+    if(durum==='in'){
+      if(kod===31) detay = 'İY';
+      else if(e.time && e.time.currentPeriodStartTimestamp){ const dk = Math.floor((simdiSn - e.time.currentPeriodStartTimestamp)/60) + (kod===7 ? 46 : 1);
+        detay = kod===7 ? (dk>90 ? "90+'" : dk+"'") : (dk>45 ? "45+'" : dk+"'"); }
+      else detay = (e.status.description||'');
+    } else if(durum==='post') detay = 'MS';
+    return {id:'s'+e.id, t:e.startTimestamp*1000, ev:e.homeTeam.name, dep:e.awayTeam.name, evK:e.homeTeam.shortName||e.homeTeam.name, depK:e.awayTeam.shortName||e.awayTeam.name,
+            hs:(e.homeScore&&e.homeScore.current)||0, as:(e.awayScore&&e.awayScore.current)||0, durum, detay, dakika:''};
+  });
+}
+async function tsdbKaynak(lig){
+  const id = TSDB[lig]; if(!id) return [];
+  const simdi = Date.now();
+  const r = await Promise.allSettled([gunStr(simdi), gunStr(simdi-86400e3)].map(d => jsonAl(`https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=${d}&l=${id}`)));
+  const ok = r.filter(x=>x.status==='fulfilled'); if(!ok.length) throw r[0].reason;
+  const DEVAM = {'1H':'1. yarı','2H':'2. yarı','HT':'İY','ET':'uzatma','P':'penaltılar','LIVE':'canlı'};
+  return ok.flatMap(x => (x.value.events||[])).map(e => {
+    const st = (e.strStatus||'').toUpperCase(); const fin = /FT|FINISHED|AET|PEN/.test(st) && !DEVAM[st];
+    const durum = DEVAM[st] ? 'in' : fin ? 'post' : 'pre';
+    return {id:'t'+e.idEvent, t:Date.parse((e.strTimestamp||'')+'Z'), ev:e.strHomeTeam, dep:e.strAwayTeam, evK:e.strHomeTeam, depK:e.strAwayTeam,
+            hs:+e.intHomeScore||0, as:+e.intAwayScore||0, durum, detay: durum==='in' ? (e.strProgress ? e.strProgress+"'" : DEVAM[st]) : durum==='post' ? 'MS' : '', dakika:''};
+  }).filter(e => isFinite(e.t));
+}
+const KAYNAKLAR = [['ESPN', espnKaynak('site.api.espn.com')], ['ESPN-2', espnKaynak('site.web.api.espn.com')], ['SofaScore', sofaKaynak], ['TheSportsDB', tsdbKaynak]];
+async function espnCek(slug){   // (adı geriye uyumluluk için) → lig koduyla çağrılır
+  const lig = Object.keys(ESPN).find(k => ESPN[k]===slug) || slug;
+  const tercih = ls('slt_canli_kaynak');
+  const sira = KAYNAKLAR.slice().sort((a,b) => (b[0]===tercih) - (a[0]===tercih));
+  const hatalar = [];
+  for(const [ad, f] of sira){
+    try{
+      const ev = await f(lig);
+      if(ev.length || ad==='TheSportsDB'){ if(ev.length){ canliKaynak = ad; if(ad!==tercih) ls('slt_canli_kaynak', ad); }
+        const tek = new Map(); ev.forEach(e => tek.set(e.id, e)); espnSonHata = hatalar.join(' · '); return [...tek.values()]; }
+      hatalar.push(ad+': boş');
+    }catch(e){ hatalar.push(ad+': ' + (e && (e.name==='AbortError' ? 'zaman aşımı' : e.message) || 'hata')); }
+  }
+  espnSonHata = hatalar.join(' · ');
+  return [];
 }
 // Fikstürü ESPN maçıyla eşleştir: başlama saati ±30 dk + takım adı benzerliği
 function canliEslestir(fikstur, olaylar){
@@ -778,7 +818,7 @@ async function canliGuncelle(){
   const olaylar = await espnCek(ESPN[lig.id]);
   if(lig !== aktifLig || fik !== (D && D.fikstur)) return;
   canliVeri = canliEslestir(fik, olaylar); canliSon = Date.now();
-  canliDurum = !olaylar.length ? '⚠️ canlı skor alınamadı (' + espnSonHata + ')' : `canlı skor ${new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})} (${canliVeri.size} maç eşleşti)`;
+  canliDurum = !olaylar.length ? '⚠️ canlı skor alınamadı (' + espnSonHata + ')' : `canlı skor (${canliKaynak}) ${new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})} · ${canliVeri.size} maç eşleşti`;
   const e = $('canliDurum'); if(e) e.textContent = ' · ' + canliDurum;
   canliCiz();
 }
@@ -853,7 +893,7 @@ function canliSekmeCiz(){
   }).join('');
   el.innerHTML = html || '<div class="bos">Dün, bugün ve yarın bu lig(ler)de maç yok.</div>';
   $('canliBilgi').innerHTML = hata===canliSekmeVeri.length ? '⚠️ Canlı skor alınamadı. İnterneti kontrol et; ⟳ ile tekrar dene.'
-    : `${canliN} canlı maç · ${toplam} maç · son güncelleme ${new Date(canliSekmeZaman).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})} (dakikada bir yenilenir)`;
+    : `Kaynak: ${canliKaynak||'—'} · ${canliN} canlı maç · ${toplam} maç · son güncelleme ${new Date(canliSekmeZaman).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})} (dakikada bir yenilenir)`;
 }
 setInterval(() => { if(!document.hidden && $('e-canli').classList.contains('aktif')) canliSekmeYukle(); }, 60e3);
 
