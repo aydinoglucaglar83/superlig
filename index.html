@@ -68,7 +68,7 @@ td.l,th.l{text-align:left}
 .skorlar div{background:var(--kart2);border-radius:8px;padding:5px 9px;font-size:13px}
 nav{position:fixed;bottom:0;left:0;right:0;z-index:20;background:var(--panel);border-top:1px solid var(--border);
   display:flex;padding-bottom:env(safe-area-inset-bottom)}
-nav button{flex:1;background:none;border:0;border-radius:0;color:var(--gri);font-size:11px;padding:8px 0 9px;font-weight:600}
+nav button{flex:1;min-width:0;background:none;border:0;border-radius:0;color:var(--gri);font-size:10px;padding:8px 0 9px;font-weight:600}
 nav button i{display:block;font-style:normal;font-size:19px;margin-bottom:1px}
 nav button.aktif{color:var(--vurgu)}
 .bos{color:var(--gri);text-align:center;padding:24px 8px;font-size:14px}
@@ -83,6 +83,14 @@ nav button.aktif{color:var(--vurgu)}
 .yesil{color:#56d364}.kirmizi{color:#ff7b72}
 .canli{display:flex;align-items:center;justify-content:space-between;background:#2a1215;border:1px solid #5c2026;border-radius:9px;padding:6px 10px;margin-bottom:8px;font-size:13px}
 .canli.bitti{background:var(--kart2);border-color:var(--border)}
+.cs{display:grid;grid-template-columns:54px 1fr auto;gap:8px;align-items:center;padding:9px 4px;border-bottom:1px solid var(--border)}
+.cs:last-child{border-bottom:0}
+.cs .dk{font-size:12px;color:var(--gri);text-align:center}
+.cs .dk.in{color:#ff7b72;font-weight:800}
+.cs .tk{font-size:14px;line-height:1.5}
+.cs .sk{font-size:17px;font-weight:800;text-align:right;line-height:1.5}
+.cs .alt2{font-size:11px;color:var(--gri)}
+.grp{font-size:12px;color:var(--gri);font-weight:700;margin:4px 4px 2px;text-transform:uppercase}
 .canli .skor{font-size:18px;font-weight:800;letter-spacing:1px}
 .canli .nokta{display:inline-block;width:8px;height:8px;border-radius:50%;background:#ff4d4f;margin-right:6px;animation:yan 1.2s infinite}
 @keyframes yan{50%{opacity:.25}}
@@ -101,6 +109,13 @@ nav button.aktif{color:var(--vurgu)}
   <!-- MAÇLAR -->
   <section class="ekran aktif" id="e-maclar">
     <div id="macListe"></div>
+  </section>
+
+  <!-- CANLI SKORLAR -->
+  <section class="ekran" id="e-canli">
+    <div class="sekme"><button id="cSecili">Seçili lig</button><button id="cOne" class="ghost">Öne çıkan 6 lig</button></div>
+    <div class="durum" id="canliBilgi"></div>
+    <div id="canliListe"></div>
   </section>
 
   <!-- TAHMİN -->
@@ -174,6 +189,7 @@ nav button.aktif{color:var(--vurgu)}
 
 <nav>
   <button data-e="maclar" class="aktif"><i>📅</i>Maçlar</button>
+  <button data-e="canli"><i>🔴</i>Canlı</button>
   <button data-e="tahmin"><i>🎯</i>Tahmin</button>
   <button data-e="puan"><i>🏆</i>Puan</button>
   <button data-e="basari"><i>📈</i>Başarı</button>
@@ -233,7 +249,7 @@ const DEGER_MAX_ORAN = 7.0, DEGER_MIN_OLAS = 0.15; // uç sürpriz oranları ele
 const degerMi = (p, o) => o > 1 && o <= DEGER_MAX_ORAN && p >= DEGER_MIN_OLAS && p*o-1 > DEGER_ESIGI;
 const ONBELLEK_SURE = 3*3600e3;    // 3 saat
 const ONCEKI_SEZON_AGIRLIK = 0.4;  // geçen sezon maçları bu ağırlıkla modele katılır
-const SURUM = 'v1.3.2';
+const SURUM = 'v1.4';
 const KES_DELTA = 0.02, KES_MAX_ORAN = 5.0;      // keskin referansa göre en az %2 değer, oran ≤ 5
 const KELLY_KESIR = 0.25, KELLY_TAVAN = 0.03;     // ¼ Kelly, kasanın en fazla %3'ü
 const VARSAYILAN_ORANSIZ = {a:0.5, p:0.5, m:0};
@@ -782,6 +798,61 @@ function canliCiz(){
   });
 }
 
+// ── Canlı Skorlar sekmesi ──
+let canliMod = 'secili', canliSekmeVeri = null, canliSekmeZaman = 0;
+async function canliSekmeYukle(){
+  const ligler = canliMod==='secili' ? [aktifLig].filter(l=>l && ESPN[l.id]) : LIGLER.slice(0,6);
+  $('canliBilgi').innerHTML = '<span class="yukleniyor"></span>Skorlar alınıyor…';
+  if(!ligler.length){ $('canliBilgi').textContent='Bu lig için canlı skor kaynağı yok (ek ligler).'; $('canliListe').innerHTML=''; return; }
+  const r = await Promise.all(ligler.map(async l => ({lig:l, olay: await espnCek(ESPN[l.id]).catch(()=>[])})));
+  canliSekmeVeri = r; canliSekmeZaman = Date.now();
+  canliSekmeCiz();
+}
+function canliSekmeCiz(){
+  const el = $('canliListe'); if(!canliSekmeVeri) return;
+  const bas = Date.now() - 36*3600e3, son = Date.now() + 36*3600e3;
+  let toplam = 0, canliN = 0, hata = 0;
+  const html = canliSekmeVeri.map(({lig, olay}) => {
+    if(!olay.length) hata++;
+    const o = olay.filter(e => e.t > bas && e.t < son).sort((a,b)=>a.t-b.t);
+    if(!o.length) return '';
+    // bizim tahminle eşleştir (sadece yüklü lig için model var)
+    const esle = (D && aktifLig && lig.id===aktifLig.id) ? canliEslestir(D.fikstur, o) : new Map();
+    const tersine = new Map(); esle.forEach((e,fi) => tersine.set(e, D.fikstur[fi]));
+    const grup = (ad, liste) => liste.length ? `<div class="grp">${ad}</div>` + liste.map(e => {
+      toplam++; if(e.durum==='in') canliN++;
+      const f = tersine.get(e); let tah = '';
+      if(f){ const T = tahminEt(D.M, f.ev, f.dep, f.oran, D.W); const lbl=['1','X','2'][T.sec];
+        if(e.durum==='post'){ const r=e.hs>e.as?0:e.hs===e.as?1:2; tah = `Tahmin ${lbl} · ${T.skor.i}-${T.skor.j} ${r===T.sec?'<span class="rozet y">✓</span>':'<span class="rozet k">✗</span>'}`; }
+        else tah = `Tahmin: <b>${lbl}</b> (%${yuzde(T.B[T.sec])}) · skor ${T.skor.i}-${T.skor.j}`; }
+      const dk = e.durum==='in' ? `<div class="dk in">● ${esc(e.detay||e.dakika)}</div>` : e.durum==='post' ? `<div class="dk">MS</div>`
+               : `<div class="dk">${new Date(e.t).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}<br>${new Date(e.t).toLocaleDateString('tr-TR',{day:'2-digit',month:'short'})}</div>`;
+      const sk = e.durum==='pre' ? '<div class="sk" style="color:var(--gri)">–<br>–</div>' : `<div class="sk">${e.hs}<br>${e.as}</div>`;
+      return `<div class="cs">${dk}<div class="tk">${esc(e.ev)}<br>${esc(e.dep)}${tah?`<div class="alt2">${tah}</div>`:''}</div>${sk}</div>`;
+    }).join('') : '';
+    return `<div class="kart" style="padding:8px 10px"><h3>${lig.ad}</h3>`
+      + grup('Canlı', o.filter(e=>e.durum==='in')) + grup('Biten', o.filter(e=>e.durum==='post').reverse()) + grup('Yaklaşan', o.filter(e=>e.durum==='pre')) + `</div>`;
+  }).join('');
+  el.innerHTML = html || '<div class="bos">Dün, bugün ve yarın bu lig(ler)de maç yok.</div>';
+  $('canliBilgi').innerHTML = hata===canliSekmeVeri.length ? '⚠️ Canlı skor alınamadı. İnterneti kontrol et; ⟳ ile tekrar dene.'
+    : `${canliN} canlı maç · ${toplam} maç · son güncelleme ${new Date(canliSekmeZaman).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})} (dakikada bir yenilenir)`;
+}
+setInterval(() => { if(!document.hidden && $('e-canli').classList.contains('aktif')) canliSekmeYukle(); }, 60e3);
+
+// ── Otomatik güncelleme: sitede yeni sürüm varsa bir kez yenile ──
+async function surumKontrol(){
+  try{
+    const t = await zamanAsimliFetch('index.html?s=' + Date.now(), 10000);
+    const m = t.match(/const SURUM = '([^']+)'/);
+    if(m && m[1] !== SURUM){
+      const k = 'slt_yenilendi_' + m[1];
+      if(!sessionStorage.getItem(k)){ sessionStorage.setItem(k,'1');
+        if(navigator.serviceWorker && navigator.serviceWorker.getRegistration){ const r = await navigator.serviceWorker.getRegistration(); if(r) await r.update().catch(()=>{}); }
+        location.replace('index.html?v=' + encodeURIComponent(m[1])); }
+    }
+  }catch(e){}
+}
+
 // ════════════════════════════════════════════════════════════
 //  ARAYÜZ
 // ════════════════════════════════════════════════════════════
@@ -1046,6 +1117,7 @@ function basariCiz(){
 }
 
 function ekranAc(ad){
+  if(ad==='canli' && (!canliSekmeVeri || Date.now()-canliSekmeZaman > 30e3)) setTimeout(canliSekmeYukle, 0);
   document.querySelectorAll('.ekran').forEach(e=>e.classList.toggle('aktif', e.id==='e-'+ad));
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('aktif', b.dataset.e===ad));
   window.scrollTo(0,0);
@@ -1053,7 +1125,7 @@ function ekranAc(ad){
 
 // ── olaylar ──
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => ekranAc(b.dataset.e));
-$('ligSec').onchange = () => yukle(false);
+$('ligSec').onchange = () => { yukle(false); canliSekmeVeri = null; if($('e-canli').classList.contains('aktif')) canliSekmeYukle(); };
 $('yenileBtn').onclick = () => yukle(true);
 $('hesaplaBtn').onclick = tahminCiz;
 ['evSec','depSec'].forEach(id => $(id).onchange = () => {
@@ -1078,6 +1150,9 @@ $('indirBtn').onclick = async () => {
 if('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
 
 $('surum').textContent = SURUM;
+$('cSecili').onclick = () => { canliMod='secili'; $('cSecili').className=''; $('cOne').className='ghost'; canliSekmeYukle(); };
+$('cOne').onclick = () => { canliMod='one'; $('cOne').className=''; $('cSecili').className='ghost'; canliSekmeYukle(); };
+if(location.protocol==='https:') setTimeout(surumKontrol, 1500);
 ligListesiDoldur();
 yukle(false);
 </script>
