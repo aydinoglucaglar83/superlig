@@ -95,6 +95,10 @@ nav button.aktif{color:var(--vurgu)}
 .karar.oynama{background:#2a1215;border:1px solid #5c2026}
 .karar.yok{background:var(--kart2);border:1px solid var(--border);color:var(--gri)}
 .karar b{font-size:14px}
+.bilSatir{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:6px}
+.bilSatir label{font-size:11px;color:var(--gri);text-align:center}
+.bilSatir input{width:100%;padding:7px 2px;text-align:center;font-size:14px;border-radius:8px}
+.bilAc{margin-top:6px;width:100%}
 .esikler{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
 .esikler span{background:var(--kart2);border-radius:7px;padding:4px 7px;font-size:12px}
 .esikler span b{color:var(--beyaz)}
@@ -257,7 +261,7 @@ const DEGER_MAX_ORAN = 7.0, DEGER_MIN_OLAS = 0.15; // uç sürpriz oranları ele
 const degerMi = (p, o) => o > 1 && o <= DEGER_MAX_ORAN && p >= DEGER_MIN_OLAS && p*o-1 > DEGER_ESIGI;
 const ONBELLEK_SURE = 3*3600e3;    // 3 saat
 const ONCEKI_SEZON_AGIRLIK = 0.4;  // geçen sezon maçları bu ağırlıkla modele katılır
-const SURUM = 'v1.8';
+const SURUM = 'v1.9';
 const KES_DELTA = 0.02, KES_MAX_ORAN = 5.0;      // keskin referansa göre en az %2 değer, oran ≤ 5
 const KELLY_KESIR = 0.25, KELLY_TAVAN = 0.03;     // ¼ Kelly, kasanın en fazla %3'ü
 const VARSAYILAN_ORANSIZ = {a:0.5, p:0.5, m:0};
@@ -986,6 +990,23 @@ function pillHtml(B, sec, deger, oran){
   return `<div class="pills">${[0,1,2].map(i=>`<div class="pill${i===sec?' sec':''}${deger.some(d=>d.i===i)?' deger':''}">${lbl[i]} <b>%${yuzde(B[i])}</b>${oran?`<span style="color:var(--gri)">${oran[i].toFixed(2)}</span>`:''}</div>`).join('')}</div>`;
 }
 
+// Kart içi Bilyoner oran kutuları
+const BIL_ALAN = [['1X2',0,'1'],['1X2',1,'X'],['1X2',2,'2'],['OU',0,'Üst'],['OU',1,'Alt']];
+function bilGirisHtml(f, idx){
+  const b = bilOku(f);
+  const v = (p,i) => b && b[p] && b[p][i] ? b[p][i] : '';
+  return `<button class="mini ghost bilAc" data-bilac="${idx}">✎ Bilyoner oranı ${b?'düzenle':'gir'}</button>
+    <div class="bilSatir" id="bs${idx}" style="display:none">${BIL_ALAN.map(([p,i,ad]) =>
+      `<div><label>${ad}</label><input inputmode="decimal" data-bil="${idx}" data-p="${p}" data-i="${i}" value="${v(p,i)}"></div>`).join('')}</div>`;
+}
+function bilKartGuncelle(idx){
+  const f = D && D.fikstur[idx]; if(!f) return;
+  const o = {'1X2':[null,null,null], 'OU':[null,null]};
+  document.querySelectorAll(`[data-bil="${idx}"]`).forEach(inp => { const x = num(inp.value); o[inp.dataset.p][+inp.dataset.i] = x && x>1 ? x : null; });
+  bilYaz(f, o);
+  const K = macKarari(f), el = $('kr'+idx);
+  if(el) el.innerHTML = `<div class="karar ${K.tip}">${K.html}</div>${K.esik}`;
+}
 function maclariCiz(){
   const el = $('macListe');
   if(!D){ el.innerHTML = '<div class="bos">Veri yok.</div>'; return; }
@@ -1001,9 +1022,15 @@ function maclariCiz(){
       <div class="takimlar">${esc(f.ev)} <span style="color:var(--gri)">–</span> ${esc(f.dep)}</div>
       <div class="canli" id="cl${idx}" style="display:none"></div>
       ${pillHtml(T.B, T.sec, S.filter(x=>x.pazar==='1X2'), f.oran)}
-      <div class="karar ${K.tip}">${K.html}</div>${K.esik}
+      <div id="kr${idx}"><div class="karar ${K.tip}">${K.html}</div>${K.esik}</div>
+      ${K.tip!=='yok' || K.esik ? bilGirisHtml(f, idx) : ''}
     </div>`;
   }).join('');
+  el.querySelectorAll('[data-bilac]').forEach(b => b.onclick = ev => { ev.stopPropagation();
+    const r = $('bs'+b.dataset.bilac); const ac = r.style.display==='none'; r.style.display = ac ? '' : 'none';
+    b.textContent = ac ? '✓ Kapat' : '✎ Bilyoner oranı düzenle'; if(ac){ const i=r.querySelector('input'); if(i) i.focus(); } });
+  el.querySelectorAll('[data-bil]').forEach(inp => { inp.onclick = ev => ev.stopPropagation(); inp.oninput = () => bilKartGuncelle(+inp.dataset.bil); });
+  el.querySelectorAll('.bilSatir').forEach(r => r.onclick = ev => ev.stopPropagation());
   el.querySelectorAll('.mac').forEach(k => k.onclick = () => {
     const f = D.fikstur[+k.dataset.i];
     $('evSec').value = f.ev; $('depSec').value = f.dep;
