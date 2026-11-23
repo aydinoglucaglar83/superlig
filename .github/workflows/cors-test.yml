@@ -1,0 +1,16 @@
+name: CORS test (gecici)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/cors-test.yml"]
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          curl -s -D - -o body.json -H "Origin: https://aydinoglucaglar83.github.io" "https://site.api.espn.com/apis/site/v2/sports/soccer/tur.1/scoreboard?dates=20261122-20261124" | grep -iE "^HTTP|access-control"
+          python3 -c "
+          import json;d=json.load(open('body.json'))
+          for e in d['events']:
+              c=e['competitions'][0]; s=e['status']
+              print(e['date'],[(t['homeAway'],t['team']['displayName'],t['score']) for t in c['competitors']],s['type']['state'],s['type']['shortDetail'])"

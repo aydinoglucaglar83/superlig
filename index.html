@@ -233,7 +233,7 @@ const DEGER_MAX_ORAN = 7.0, DEGER_MIN_OLAS = 0.15; // uç sürpriz oranları ele
 const degerMi = (p, o) => o > 1 && o <= DEGER_MAX_ORAN && p >= DEGER_MIN_OLAS && p*o-1 > DEGER_ESIGI;
 const ONBELLEK_SURE = 3*3600e3;    // 3 saat
 const ONCEKI_SEZON_AGIRLIK = 0.4;  // geçen sezon maçları bu ağırlıkla modele katılır
-const SURUM = 'v1.3';
+const SURUM = 'v1.3.1';
 const KES_DELTA = 0.02, KES_MAX_ORAN = 5.0;      // keskin referansa göre en az %2 değer, oran ≤ 5
 const KELLY_KESIR = 0.25, KELLY_TAVAN = 0.03;     // ¼ Kelly, kasanın en fazla %3'ü
 const VARSAYILAN_ORANSIZ = {a:0.5, p:0.5, m:0};
@@ -743,7 +743,7 @@ function canliEslestir(fikstur, olaylar){
   for(const x of adaylar){ if(sonuc.has(x.fi) || kullanilan.has(x.e)) continue; sonuc.set(x.fi, x.e); kullanilan.add(x.e); }
   return sonuc;
 }
-let canliVeri = new Map(), canliZamanlayici = null, canliSon = 0;
+let canliVeri = new Map(), canliZamanlayici = null, canliSon = 0, canliDurum = '';
 const canliPencerede = f => Date.now() > f.t - 15*60e3 && Date.now() < f.t + 3*3600e3;
 async function canliGuncelle(){
   if(!D || !aktifLig || !ESPN[aktifLig.id] || document.hidden) return;
@@ -752,6 +752,8 @@ async function canliGuncelle(){
   const olaylar = await espnCek(ESPN[lig.id]);
   if(lig !== aktifLig || fik !== (D && D.fikstur)) return;
   canliVeri = canliEslestir(fik, olaylar); canliSon = Date.now();
+  canliDurum = !olaylar.length ? '⚠️ canlı skor alınamadı' : `canlı skor ${new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})} (${canliVeri.size} maç eşleşti)`;
+  const e = $('canliDurum'); if(e) e.textContent = ' · ' + canliDurum;
   canliCiz();
 }
 function canliBaslat(){
@@ -809,7 +811,7 @@ async function yukle(zorla){
     defterSonuclandir(lig, D);
     setTimeout(canliBaslat, 0);
     const b = V.bilgi[0];
-    durum(`${lig.ad} ${esc(V.sezonAd)} · ${V.sonuclar.length} maç · ${b.kaynak} veri (${tarihYaz(b.t)})${b.uyari?' — internet yok, eski veri gösteriliyor':''}`, b.uyari);
+    durum(`${lig.ad} ${esc(V.sezonAd)} · ${V.sonuclar.length} maç · ${b.kaynak} veri (${tarihYaz(b.t)})${b.uyari?' — internet yok, eski veri gösteriliyor':''}<span id="canliDurum"></span>`, b.uyari);
     hepsiniCiz();
   }catch(e){
     if(aktifLig !== lig) return;   // bu arada başka lig seçildiyse eski hatayı gösterme
