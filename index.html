@@ -114,6 +114,9 @@ nav button.aktif{color:var(--vurgu)}
 .kbanner.oynama{background:#2a1215;border:2px solid #da3633;color:#ff7b72}
 .kbanner.bekle{background:var(--kart2);border:2px dashed var(--border);color:var(--gri)}
 .kbanner button{margin-top:8px;width:100%}
+.ktablo{width:100%;margin-top:8px;font-size:13px}
+.ktablo td{padding:5px 3px;border-bottom:1px solid var(--border);text-align:center}
+.ktablo td:first-child{text-align:left;font-weight:700}
 .esikler{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
 .esikler span{background:var(--kart2);border-radius:7px;padding:4px 7px;font-size:12px}
 .esikler span b{color:var(--beyaz)}
@@ -279,7 +282,7 @@ const DEGER_MAX_ORAN = 7.0, DEGER_MIN_OLAS = 0.15; // uç sürpriz oranları ele
 const degerMi = (p, o) => o > 1 && o <= DEGER_MAX_ORAN && p >= DEGER_MIN_OLAS && p*o-1 > DEGER_ESIGI;
 const ONBELLEK_SURE = 3*3600e3;    // 3 saat
 const ONCEKI_SEZON_AGIRLIK = 0.4;  // geçen sezon maçları bu ağırlıkla modele katılır
-const SURUM = 'v2.0.1';
+const SURUM = 'v2.1';
 const KES_DELTA = 0.02, KES_MAX_ORAN = 5.0;      // keskin referansa göre en az %2 değer, oran ≤ 5
 const KELLY_KESIR = 0.25, KELLY_TAVAN = 0.03;     // ¼ Kelly, kasanın en fazla %3'ü
 const VARSAYILAN_ORANSIZ = {a:0.5, p:0.5, m:0};
@@ -1137,6 +1140,14 @@ function kolayBanner(f, x){
       <button class="ktut" data-miktar="${miktar}">📒 Oynadım, deftere yaz</button></div>`; }
   return `<div class="kbanner oynama"><div class="buyukk">❌ OYNAMA</div><div class="acik">${x.sen.toFixed(2)} düşük. ${x.ad} için en az <b>${esik.toFixed(2)}</b> gerekir.</div>${enIyiSatir}</div>`;
 }
+function kolayTablo(f){
+  if(basladi(f)) return '';
+  const S = secenekler(f, bilOku(f)).filter(y => !y.zayif && y.sen);
+  if(!S.length) return '';
+  return `<table class="ktablo"><tr><td>Seçenek</td><td>Bilyoner</td><td>En az</td><td>Getiri</td><td></td></tr>${S.map(y => {
+    const e = minOran(y.p), ok = y.senDeger;
+    return `<tr><td>${y.ad}</td><td>${y.sen.toFixed(2)}</td><td>${e.toFixed(2)}</td><td class="${y.senEv>0?'yesil':'kirmizi'}">${y.senEv>0?'+':''}${(y.senEv*100).toFixed(0)}%</td><td>${ok?'✅':'❌'}${!ok && y.senEv>KES_DELTA && y.sen>KES_MAX_ORAN ? '<span class="kucuk"> oran>5</span>':''}</td></tr>`; }).join('')}</table>`;
+}
 function kolayKartHtml(f, idx){
   const T = kartTahmin(f), S = kolaySecenekler(f);
   const bas = `<div class="ust"><span>${tarihYaz(f.t)}</span><span>Skor tahmini: <b style="color:var(--beyaz)">${T.skor.i}-${T.skor.j}</b></span></div>
@@ -1148,7 +1159,7 @@ function kolayKartHtml(f, idx){
   return `<div class="kart" data-k="${idx}">${bas}
     <div class="kchips">${S.map(y => `<button class="${y===x?'sec':''}" data-kp="${y.pazar}" data-ki="${y.i}">${y.ad.replace(' 2.5','')}<small>%${Math.round(y.p*100)}</small></button>`).join('')}</div>
     <div class="ksoru"><span>Bilyoner'de <b>${x.ad}</b> oranı kaç?</span><input inputmode="decimal" class="koran" placeholder="oran" value="${x.sen ? x.sen : ''}"></div>
-    <div class="kb">${kolayBanner(f, x)}</div>${x.kaynak && x.kaynak!=='Betfair Borsası' ? `<div class="kucuk" style="margin-top:6px">Adil olasılık kaynağı: ${esc(x.kaynak)}</div>` : ''}</div>`;
+    <div class="kb">${kolayBanner(f, x)}</div><div class="kt">${kolayTablo(f)}</div>${x.kaynak && x.kaynak!=='Betfair Borsası' ? `<div class="kucuk" style="margin-top:6px">Adil olasılık kaynağı: ${esc(x.kaynak)}</div>` : ''}</div>`;
 }
 function kolayBagla(el){
   el.querySelectorAll('[data-k]').forEach(kart => {
@@ -1161,7 +1172,7 @@ function kolayBagla(el){
       const S = kolaySecenekler(f), x = kolaySecili(f, S), o = bilOku(f) || {'1X2':[null,null,null], 'OU':[null,null]};
       const v = num(inp.value); o[x.pazar] = o[x.pazar].slice(); o[x.pazar][x.i] = v && v > 1 ? v : null;
       bilYaz(f, o);
-      const x2 = kolaySecili(f, kolaySecenekler(f)); kart.querySelector('.kb').innerHTML = kolayBanner(f, x2); kolayTutBagla(kart, f, x2);
+      const x2 = kolaySecili(f, kolaySecenekler(f)); kart.querySelector('.kb').innerHTML = kolayBanner(f, x2); kart.querySelector('.kt').innerHTML = kolayTablo(f); kolayTutBagla(kart, f, x2);
     };
     const S = kolaySecenekler(f); if(S.length) kolayTutBagla(kart, f, kolaySecili(f, S));
   });
