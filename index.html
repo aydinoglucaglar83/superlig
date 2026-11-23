@@ -249,7 +249,7 @@ const DEGER_MAX_ORAN = 7.0, DEGER_MIN_OLAS = 0.15; // uç sürpriz oranları ele
 const degerMi = (p, o) => o > 1 && o <= DEGER_MAX_ORAN && p >= DEGER_MIN_OLAS && p*o-1 > DEGER_ESIGI;
 const ONBELLEK_SURE = 3*3600e3;    // 3 saat
 const ONCEKI_SEZON_AGIRLIK = 0.4;  // geçen sezon maçları bu ağırlıkla modele katılır
-const SURUM = 'v1.4.1';
+const SURUM = 'v1.4.2';
 const KES_DELTA = 0.02, KES_MAX_ORAN = 5.0;      // keskin referansa göre en az %2 değer, oran ≤ 5
 const KELLY_KESIR = 0.25, KELLY_TAVAN = 0.03;     // ¼ Kelly, kasanın en fazla %3'ü
 const VARSAYILAN_ORANSIZ = {a:0.5, p:0.5, m:0};
@@ -737,6 +737,8 @@ function espnOlaylar(j){
 let espnSonHata = '';
 async function espnJson(url){
   const oku = u => zamanAsimliFetch(u, 8000).then(t => { const o=JSON.parse(t); if(!o.events) throw new Error('events yok'); return o; });
+  const ozel0 = (ls('slt_proxy')||'').trim();
+  if(ozel0){ try{ return await Promise.any([oku(url), oku(ozel0+encodeURIComponent(url))]); }catch(e){} }   // kendi Worker'ın varsa onunla yarıştır
   try{ return await oku(url); }
   catch(e){ espnSonHata = 'doğrudan: ' + (e && (e.name==='AbortError' ? 'zaman aşımı' : e.message) || e); }
   const dene = ['https://api.allorigins.win/raw?url='+encodeURIComponent(url), 'https://corsproxy.io/?url='+encodeURIComponent(url),
@@ -776,7 +778,7 @@ async function canliGuncelle(){
   const olaylar = await espnCek(ESPN[lig.id]);
   if(lig !== aktifLig || fik !== (D && D.fikstur)) return;
   canliVeri = canliEslestir(fik, olaylar); canliSon = Date.now();
-  canliDurum = !olaylar.length ? '⚠️ canlı skor alınamadı' : `canlı skor ${new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})} (${canliVeri.size} maç eşleşti)`;
+  canliDurum = !olaylar.length ? '⚠️ canlı skor alınamadı (' + espnSonHata + ')' : `canlı skor ${new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})} (${canliVeri.size} maç eşleşti)`;
   const e = $('canliDurum'); if(e) e.textContent = ' · ' + canliDurum;
   canliCiz();
 }
