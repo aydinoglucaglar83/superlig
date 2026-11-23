@@ -279,7 +279,7 @@ const DEGER_MAX_ORAN = 7.0, DEGER_MIN_OLAS = 0.15; // uç sürpriz oranları ele
 const degerMi = (p, o) => o > 1 && o <= DEGER_MAX_ORAN && p >= DEGER_MIN_OLAS && p*o-1 > DEGER_ESIGI;
 const ONBELLEK_SURE = 3*3600e3;    // 3 saat
 const ONCEKI_SEZON_AGIRLIK = 0.4;  // geçen sezon maçları bu ağırlıkla modele katılır
-const SURUM = 'v2.0';
+const SURUM = 'v2.0.1';
 const KES_DELTA = 0.02, KES_MAX_ORAN = 5.0;      // keskin referansa göre en az %2 değer, oran ≤ 5
 const KELLY_KESIR = 0.25, KELLY_TAVAN = 0.03;     // ¼ Kelly, kasanın en fazla %3'ü
 const VARSAYILAN_ORANSIZ = {a:0.5, p:0.5, m:0};
@@ -1124,7 +1124,10 @@ function enIyiSecenek(f){
   const S = secenekler(f, bilOku(f)).filter(y => !y.zayif && y.sen);
   return S.length ? S.reduce((a,b) => b.senEv > a.senEv ? b : a) : null;
 }
+const basladi = f => Date.now() >= f.t - 60e3;   // başlama saatinden 1 dk öncesinden itibaren karar verilmez
+const BASLADI_HTML = `<div class="kbanner bekle"><div class="buyukk">⏱️ Maç başladı</div><div class="acik">Karar sadece maç öncesi oranlar için geçerli. Canlı bahiste olasılıklar dakika dakika değişir; bu uygulama canlı oranları değerlendiremez.</div></div>`;
 function kolayBanner(f, x){
+  if(basladi(f)) return BASLADI_HTML;
   const esik = minOran(x.p);
   const eb = enIyiSecenek(f);
   const enIyiSatir = eb && !eb.senDeger ? `<div class="acik" style="margin-top:6px;color:var(--beyaz)">Yine de oynanacaksa en az kayıplı: <b>${eb.ad} @${eb.sen.toFixed(2)}</b> (beklenen ${(eb.senEv*100).toFixed(1)}%) · tahmin edilen en olası sonuç: <b>${['1','X','2'][kartTahmin(f).sec]}</b></div>` : '';
@@ -1294,6 +1297,7 @@ function bilYaz(f, oranlar){
 // Değer için gereken en düşük oran (adil olasılık + %2)
 const minOran = p => (1 + KES_DELTA) / p;
 function macKarari(f){
+  if(basladi(f)) return {tip:'yok', html:'⏱️ Maç başladı: karar sadece maç öncesi oranlar için geçerli', esik:''};
   const bil = bilOku(f);
   const S = secenekler(f, bil).filter(x => !x.zayif);
   if(!S.length) return {tip:'yok', html:'— Not yok: bu maç için keskin piyasa (Betfair) oranı yok', esik:''};
