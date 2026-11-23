@@ -249,7 +249,7 @@ const DEGER_MAX_ORAN = 7.0, DEGER_MIN_OLAS = 0.15; // uç sürpriz oranları ele
 const degerMi = (p, o) => o > 1 && o <= DEGER_MAX_ORAN && p >= DEGER_MIN_OLAS && p*o-1 > DEGER_ESIGI;
 const ONBELLEK_SURE = 3*3600e3;    // 3 saat
 const ONCEKI_SEZON_AGIRLIK = 0.4;  // geçen sezon maçları bu ağırlıkla modele katılır
-const SURUM = 'v1.5';
+const SURUM = 'v1.6';
 const KES_DELTA = 0.02, KES_MAX_ORAN = 5.0;      // keskin referansa göre en az %2 değer, oran ≤ 5
 const KELLY_KESIR = 0.25, KELLY_TAVAN = 0.03;     // ¼ Kelly, kasanın en fazla %3'ü
 const VARSAYILAN_ORANSIZ = {a:0.5, p:0.5, m:0};
@@ -737,22 +737,31 @@ function espnOlaylar(j){
   return (j.events||[]).map(e => { const c=e.competitions&&e.competitions[0]; if(!c) return null;
     const h=c.competitors.find(x=>x.homeAway==='home'), a=c.competitors.find(x=>x.homeAway==='away'); if(!h||!a) return null;
     const st=(e.status||c.status||{}); const ty=st.type||{};
-    return {id:'e'+e.id, t:Date.parse(e.date), ev:h.team.displayName, dep:a.team.displayName, evK:h.team.shortDisplayName, depK:a.team.shortDisplayName,
+    return {id:'e'+(e.id || (h.team.displayName+'|'+a.team.displayName+'|'+e.date)), t:Date.parse(e.date), ev:h.team.displayName, dep:a.team.displayName, evK:h.team.shortDisplayName, depK:a.team.shortDisplayName,
             hs:+h.score||0, as:+a.score||0, durum:ty.state, detay:ty.shortDetail||'', dakika:st.displayClock||''}; }).filter(Boolean);
 }
 function espnKaynak(host){
-  return async lig => { const slug = ESPN[lig]; if(!slug) return [];
-    const kok = `https://${host}/apis/site/v2/sports/soccer/${slug}/scoreboard`, simdi = Date.now();
-    const r = await Promise.allSettled([kok+'?dates='+ymd(simdi), kok+'?dates='+ymd(simdi-86400e3)].map(u=>jsonAl(u)));
+  return async (lig, gunler) => { const slug = ESPN[lig]; if(!slug) return [];
+    const kok = `https://${host}/apis/site/v2/sports/soccer/${slug}/scoreboard`;
+    const r = await Promise.allSettled(gunler.map(g => jsonAl(kok+'?dates='+ymd(g))));
     const ok = r.filter(x=>x.status==='fulfilled');
     if(!ok.length) throw (r[0].reason || new Error('yok'));
     return ok.flatMap(x=>espnOlaylar(x.value)); };
 }
-async function sofaKaynak(lig){
+let sofaSezon = {};
+async function sofaKaynak(lig, gunler){
   const id = SOFA[lig]; if(!id) return [];
   const j = await jsonAl(`https://api.sofascore.com/api/v1/sport/football/scheduled-events/${gunStr(Date.now())}`, 10000);
+  let tum = (j.events||[]).filter(e => e.tournament && e.tournament.uniqueTournament && e.tournament.uniqueTournament.id===id);
+  if(gunler.length > 2){   // geniş aralık: sezonun son ve sıradaki maçları
+    try{
+      if(!sofaSezon[id]) sofaSezon[id] = (await jsonAl(`https://api.sofascore.com/api/v1/unique-tournament/${id}/seasons`)).seasons[0].id;
+      const r = await Promise.allSettled(['last','next'].map(y => jsonAl(`https://api.sofascore.com/api/v1/unique-tournament/${id}/season/${sofaSezon[id]}/events/${y}/0`)));
+      r.forEach(x => { if(x.status==='fulfilled') tum = tum.concat(x.value.events||[]); });
+    }catch(e){}
+  }
   const simdiSn = Date.now()/1000;
-  return (j.events||[]).filter(e => e.tournament && e.tournament.uniqueTournament && e.tournament.uniqueTournament.id===id).map(e => {
+  return tum.map(e => {
     const tip = e.status && e.status.type, kod = e.status && e.status.code;
     const durum = tip==='inprogress' ? 'in' : tip==='finished' ? 'post' : 'pre';
     let detay = '';
@@ -766,10 +775,9 @@ async function sofaKaynak(lig){
             hs:(e.homeScore&&e.homeScore.current)||0, as:(e.awayScore&&e.awayScore.current)||0, durum, detay, dakika:''};
   });
 }
-async function tsdbKaynak(lig){
+async function tsdbKaynak(lig, gunler){
   const id = TSDB[lig]; if(!id) return [];
-  const simdi = Date.now();
-  const r = await Promise.allSettled([gunStr(simdi), gunStr(simdi-86400e3)].map(d => jsonAl(`https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=${d}&l=${id}`)));
+  const r = await Promise.allSettled(gunler.map(g => jsonAl(`https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=${gunStr(g)}&l=${id}`)));
   const ok = r.filter(x=>x.status==='fulfilled'); if(!ok.length) throw r[0].reason;
   const DEVAM = {'1H':'1. yarı','2H':'2. yarı','HT':'İY','ET':'uzatma','P':'penaltılar','LIVE':'canlı'};
   return ok.flatMap(x => (x.value.events||[])).map(e => {
@@ -780,16 +788,19 @@ async function tsdbKaynak(lig){
   }).filter(e => isFinite(e.t));
 }
 const KAYNAKLAR = [['ESPN', espnKaynak('site.api.espn.com')], ['ESPN-2', espnKaynak('site.web.api.espn.com')], ['SofaScore', sofaKaynak], ['TheSportsDB', tsdbKaynak]];
-async function espnCek(slug){   // (adı geriye uyumluluk için) → lig koduyla çağrılır
+// gunOnce/gunSonra: bugünden kaç gün geri/ileri (varsayılan dün+bugün)
+async function espnCek(slug, gunOnce=1, gunSonra=0){   // (adı geriye uyumluluk için)
   const lig = Object.keys(ESPN).find(k => ESPN[k]===slug) || slug;
+  const gunler = []; for(let i=-gunOnce;i<=gunSonra;i++) gunler.push(Date.now() + i*86400e3);
   const tercih = ls('slt_canli_kaynak');
   const sira = KAYNAKLAR.slice().sort((a,b) => (b[0]===tercih) - (a[0]===tercih));
   const hatalar = [];
   for(const [ad, f] of sira){
     try{
-      const ev = await f(lig);
+      const ev = await f(lig, gunler);
       if(ev.length || ad==='TheSportsDB'){ if(ev.length){ canliKaynak = ad; if(ad!==tercih) ls('slt_canli_kaynak', ad); }
-        const tek = new Map(); ev.forEach(e => tek.set(e.id, e)); espnSonHata = hatalar.join(' · '); return [...tek.values()]; }
+        const tek = new Map(); ev.forEach(e => tek.set(e.id, e)); espnSonHata = hatalar.join(' · ');
+        const sonuc = [...tek.values()]; sonuc.kaynak = ad; return sonuc; }
       hatalar.push(ad+': boş');
     }catch(e){ hatalar.push(ad+': ' + (e && (e.name==='AbortError' ? 'zaman aşımı' : e.message) || 'hata')); }
   }
@@ -847,7 +858,7 @@ function canliCiz(){
 }
 
 // ── Canlı Skorlar sekmesi ──
-let canliMod = 'secili', canliSekmeVeri = null, canliSekmeZaman = 0, canliIstekNo = 0;
+let canliMod = 'secili', canliSekmeVeri = null, canliSekmeZaman = 0, canliIstekNo = 0, canliGenis = {};   // lig → {t, olaylar Map}
 async function canliSekmeYukle(){
   const no = ++canliIstekNo;   // sadece en son istek ekrana yazar
   const ligler = canliMod==='secili' ? [aktifLig].filter(l=>l && ESPN[l.id]) : LIGLER.slice(0,6);
@@ -856,7 +867,15 @@ async function canliSekmeYukle(){
   const t0 = Date.now(); espnSonHata = '';
   const sinir = ms => new Promise(res => setTimeout(() => res([]), ms));
   try{
-    const r = await Promise.all(ligler.map(async l => ({lig:l, olay: await Promise.race([espnCek(ESPN[l.id]).catch(()=>[]), sinir(30000)])})));
+    const r = await Promise.all(ligler.map(async l => {
+      const g = canliGenis[l.id], genisGerek = !g || Date.now() - g.t > 10*60e3;
+      const yeni = await Promise.race([(genisGerek ? espnCek(ESPN[l.id], 4, 3) : espnCek(ESPN[l.id], 1, 0)).catch(()=>[]), sinir(30000)]);
+      if(!genisGerek && yeni.length && yeni.kaynak !== g.kaynak){ delete canliGenis[l.id]; return {lig:l, olay:yeni}; }  // kaynak değişti: karıştırma
+      const harita = genisGerek ? new Map() : g.olaylar;
+      yeni.forEach(e => harita.set(e.id, e));
+      if(genisGerek && yeni.length) canliGenis[l.id] = {t: Date.now(), olaylar: harita, kaynak: yeni.kaynak};
+      return {lig:l, olay:[...harita.values()]};
+    }));
     if(no !== canliIstekNo) return;
     canliSekmeVeri = r; canliSekmeZaman = Date.now();
     canliSekmeCiz();
@@ -868,7 +887,7 @@ async function canliSekmeYukle(){
 }
 function canliSekmeCiz(){
   const el = $('canliListe'); if(!canliSekmeVeri) return;
-  const bas = Date.now() - 36*3600e3, son = Date.now() + 36*3600e3;
+  const bas = Date.now() - 4.5*86400e3, son = Date.now() + 3.5*86400e3;
   let toplam = 0, canliN = 0, hata = 0;
   const html = canliSekmeVeri.map(({lig, olay}) => {
     if(!olay.length) hata++;
@@ -883,7 +902,7 @@ function canliSekmeCiz(){
       if(f){ const T = tahminEt(D.M, f.ev, f.dep, f.oran, D.W); const lbl=['1','X','2'][T.sec];
         if(e.durum==='post'){ const r=e.hs>e.as?0:e.hs===e.as?1:2; tah = `Tahmin ${lbl} · ${T.skor.i}-${T.skor.j} ${r===T.sec?'<span class="rozet y">✓</span>':'<span class="rozet k">✗</span>'}`; }
         else tah = `Tahmin: <b>${lbl}</b> (%${yuzde(T.B[T.sec])}) · skor ${T.skor.i}-${T.skor.j}`; }
-      const dk = e.durum==='in' ? `<div class="dk in">● ${esc(e.detay||e.dakika)}</div>` : e.durum==='post' ? `<div class="dk">MS</div>`
+      const dk = e.durum==='in' ? `<div class="dk in">● ${esc(e.detay||e.dakika)}</div>` : e.durum==='post' ? `<div class="dk">MS<br>${new Date(e.t).toLocaleDateString('tr-TR',{day:'2-digit',month:'short'})}</div>`
                : `<div class="dk">${new Date(e.t).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}<br>${new Date(e.t).toLocaleDateString('tr-TR',{day:'2-digit',month:'short'})}</div>`;
       const sk = e.durum==='pre' ? '<div class="sk" style="color:var(--gri)">–<br>–</div>' : `<div class="sk">${e.hs}<br>${e.as}</div>`;
       return `<div class="cs">${dk}<div class="tk">${esc(e.ev)}<br>${esc(e.dep)}${tah?`<div class="alt2">${tah}</div>`:''}</div>${sk}</div>`;
@@ -891,7 +910,7 @@ function canliSekmeCiz(){
     return `<div class="kart" style="padding:8px 10px"><h3>${lig.ad}</h3>`
       + grup('Canlı', o.filter(e=>e.durum==='in')) + grup('Biten', o.filter(e=>e.durum==='post').reverse()) + grup('Yaklaşan', o.filter(e=>e.durum==='pre')) + `</div>`;
   }).join('');
-  el.innerHTML = html || '<div class="bos">Dün, bugün ve yarın bu lig(ler)de maç yok.</div>';
+  el.innerHTML = html || '<div class="bos">Son 4 gün ve önümüzdeki 3 günde bu lig(ler)de maç yok.</div>';
   $('canliBilgi').innerHTML = hata===canliSekmeVeri.length ? '⚠️ Canlı skor alınamadı. İnterneti kontrol et; ⟳ ile tekrar dene.'
     : `Kaynak: ${canliKaynak||'—'} · ${canliN} canlı maç · ${toplam} maç · son güncelleme ${new Date(canliSekmeZaman).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})} (dakikada bir yenilenir)`;
 }
