@@ -1,0 +1,21 @@
+name: CORS test (gecici)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/cors-test.yml"]
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          O="Origin: https://aydinoglucaglar83.github.io"
+          t() { echo "=== $1"; curl -s -m 20 --compressed -D h.txt -o b.txt -H "$O" -A "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/131 Mobile Safari/537.36" "$2"; grep -iE "^HTTP|access-control-allow-origin" h.txt; echo "boyut: $(wc -c < b.txt)"; grep -o -iE "basaksehir[^}]{0,300}" b.txt | head -c 500; echo; }
+          t sofascore "https://api.sofascore.com/api/v1/sport/football/scheduled-events/2026-11-23"
+          t sofascore-live "https://api.sofascore.com/api/v1/sport/football/events/live"
+          t livescore "https://prod-public-api.livescore.com/v1/api/app/date/soccer/20261123/3?MD=1"
+          t fotmob "https://www.fotmob.com/api/data/matches?date=20261123"
+          t thesportsdb "https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=2026-11-23&l=4339"
+          t espn-web "https://site.web.api.espn.com/apis/site/v2/sports/soccer/tur.1/scoreboard?dates=20261123"
+          t espn-cdn "https://cdn.espn.com/core/soccer/scoreboard?xhr=1&league=tur.1"
+          t nesine "https://ls.nesine.com/api/v1/livescore/football"
+          t openfootball-flashscore "https://d.flashscore.com/x/feed/f_1_0_3_tr_1"
