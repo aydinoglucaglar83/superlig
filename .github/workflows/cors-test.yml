@@ -8,9 +8,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: |
-          curl -s -D - -o body.json -H "Origin: https://aydinoglucaglar83.github.io" "https://site.api.espn.com/apis/site/v2/sports/soccer/tur.1/scoreboard?dates=20261122-20261124" | grep -iE "^HTTP|access-control"
-          python3 -c "
+          for q in "?dates=20261123" "" "?dates=20261122"; do
+            echo "=== $q"
+            curl -s --compressed -o body.json -w "HTTP %{http_code}\n" "https://site.api.espn.com/apis/site/v2/sports/soccer/tur.1/scoreboard$q"
+            python3 -c "
           import json;d=json.load(open('body.json'))
-          for e in d['events']:
+          for e in d.get('events',[]):
               c=e['competitions'][0]; s=e['status']
-              print(e['date'],[(t['homeAway'],t['team']['displayName'],t['score']) for t in c['competitors']],s['type']['state'],s['type']['shortDetail'])"
+              print(e['date'],[(t['homeAway'],t['team']['displayName'],t.get('score')) for t in c['competitors']],s['type']['state'],s['type']['shortDetail'],s.get('displayClock'))" || true
+          done
