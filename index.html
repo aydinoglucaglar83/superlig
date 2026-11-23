@@ -249,7 +249,7 @@ const DEGER_MAX_ORAN = 7.0, DEGER_MIN_OLAS = 0.15; // uç sürpriz oranları ele
 const degerMi = (p, o) => o > 1 && o <= DEGER_MAX_ORAN && p >= DEGER_MIN_OLAS && p*o-1 > DEGER_ESIGI;
 const ONBELLEK_SURE = 3*3600e3;    // 3 saat
 const ONCEKI_SEZON_AGIRLIK = 0.4;  // geçen sezon maçları bu ağırlıkla modele katılır
-const SURUM = 'v1.4';
+const SURUM = 'v1.4.1';
 const KES_DELTA = 0.02, KES_MAX_ORAN = 5.0;      // keskin referansa göre en az %2 değer, oran ≤ 5
 const KELLY_KESIR = 0.25, KELLY_TAVAN = 0.03;     // ¼ Kelly, kasanın en fazla %3'ü
 const VARSAYILAN_ORANSIZ = {a:0.5, p:0.5, m:0};
@@ -734,10 +734,16 @@ function espnOlaylar(j){
     return {id:e.id, t:Date.parse(e.date), ev:h.team.displayName, dep:a.team.displayName, evK:h.team.shortDisplayName, depK:a.team.shortDisplayName,
             hs:+h.score||0, as:+a.score||0, durum:ty.state, detay:ty.shortDetail||'', dakika:st.displayClock||''}; }).filter(Boolean);
 }
+let espnSonHata = '';
 async function espnJson(url){
-  const dene = [url, 'https://api.allorigins.win/raw?url='+encodeURIComponent(url), 'https://corsproxy.io/?url='+encodeURIComponent(url)];
+  const oku = u => zamanAsimliFetch(u, 8000).then(t => { const o=JSON.parse(t); if(!o.events) throw new Error('events yok'); return o; });
+  try{ return await oku(url); }
+  catch(e){ espnSonHata = 'doğrudan: ' + (e && (e.name==='AbortError' ? 'zaman aşımı' : e.message) || e); }
+  const dene = ['https://api.allorigins.win/raw?url='+encodeURIComponent(url), 'https://corsproxy.io/?url='+encodeURIComponent(url),
+                'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(url)];
   const ozel = (ls('slt_proxy')||'').trim(); if(ozel) dene.unshift(ozel+encodeURIComponent(url));
-  return Promise.any(dene.map(u => zamanAsimliFetch(u, 12000).then(t => { const o=JSON.parse(t); if(!o.events) throw 0; return o; })));
+  try{ return await Promise.any(dene.map(oku)); }
+  catch(e){ espnSonHata += ' · proxy: başarısız'; throw e; }
 }
 // ESPN tek gün kabul ediyor (?dates=YYYYMMDD; aralık biçimi 400 veriyor): dün + bugün (UTC) paralel çekilir
 async function espnCek(slug){
@@ -799,14 +805,24 @@ function canliCiz(){
 }
 
 // ── Canlı Skorlar sekmesi ──
-let canliMod = 'secili', canliSekmeVeri = null, canliSekmeZaman = 0;
+let canliMod = 'secili', canliSekmeVeri = null, canliSekmeZaman = 0, canliIstekNo = 0;
 async function canliSekmeYukle(){
+  const no = ++canliIstekNo;   // sadece en son istek ekrana yazar
   const ligler = canliMod==='secili' ? [aktifLig].filter(l=>l && ESPN[l.id]) : LIGLER.slice(0,6);
   $('canliBilgi').innerHTML = '<span class="yukleniyor"></span>Skorlar alınıyor…';
   if(!ligler.length){ $('canliBilgi').textContent='Bu lig için canlı skor kaynağı yok (ek ligler).'; $('canliListe').innerHTML=''; return; }
-  const r = await Promise.all(ligler.map(async l => ({lig:l, olay: await espnCek(ESPN[l.id]).catch(()=>[])})));
-  canliSekmeVeri = r; canliSekmeZaman = Date.now();
-  canliSekmeCiz();
+  const t0 = Date.now(); espnSonHata = '';
+  const sinir = ms => new Promise(res => setTimeout(() => res([]), ms));
+  try{
+    const r = await Promise.all(ligler.map(async l => ({lig:l, olay: await Promise.race([espnCek(ESPN[l.id]).catch(()=>[]), sinir(30000)])})));
+    if(no !== canliIstekNo) return;
+    canliSekmeVeri = r; canliSekmeZaman = Date.now();
+    canliSekmeCiz();
+    if(espnSonHata) $('canliBilgi').innerHTML += `<br><span class="kucuk">Not (${((Date.now()-t0)/1000).toFixed(1)} sn): ${esc(espnSonHata)}</span>`;
+  }catch(e){
+    if(no !== canliIstekNo) return;
+    $('canliBilgi').innerHTML = '⚠️ Hata: ' + esc(e && e.message || String(e));
+  }
 }
 function canliSekmeCiz(){
   const el = $('canliListe'); if(!canliSekmeVeri) return;
