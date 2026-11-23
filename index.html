@@ -233,7 +233,7 @@ const DEGER_MAX_ORAN = 7.0, DEGER_MIN_OLAS = 0.15; // uç sürpriz oranları ele
 const degerMi = (p, o) => o > 1 && o <= DEGER_MAX_ORAN && p >= DEGER_MIN_OLAS && p*o-1 > DEGER_ESIGI;
 const ONBELLEK_SURE = 3*3600e3;    // 3 saat
 const ONCEKI_SEZON_AGIRLIK = 0.4;  // geçen sezon maçları bu ağırlıkla modele katılır
-const SURUM = 'v1.3.1';
+const SURUM = 'v1.3.2';
 const KES_DELTA = 0.02, KES_MAX_ORAN = 5.0;      // keskin referansa göre en az %2 değer, oran ≤ 5
 const KELLY_KESIR = 0.25, KELLY_TAVAN = 0.03;     // ¼ Kelly, kasanın en fazla %3'ü
 const VARSAYILAN_ORANSIZ = {a:0.5, p:0.5, m:0};
@@ -711,24 +711,26 @@ function adBenzer(a, b){
   return 2*o/(A.size+B.size);
 }
 const ymd = ms => { const d=new Date(ms); return d.getUTCFullYear()+String(d.getUTCMonth()+1).padStart(2,'0')+String(d.getUTCDate()).padStart(2,'0'); };
+function espnOlaylar(j){
+  return (j.events||[]).map(e => { const c=e.competitions&&e.competitions[0]; if(!c) return null;
+    const h=c.competitors.find(x=>x.homeAway==='home'), a=c.competitors.find(x=>x.homeAway==='away'); if(!h||!a) return null;
+    const st=(e.status||c.status||{}); const ty=st.type||{};
+    return {id:e.id, t:Date.parse(e.date), ev:h.team.displayName, dep:a.team.displayName, evK:h.team.shortDisplayName, depK:a.team.shortDisplayName,
+            hs:+h.score||0, as:+a.score||0, durum:ty.state, detay:ty.shortDetail||'', dakika:st.displayClock||''}; }).filter(Boolean);
+}
+async function espnJson(url){
+  const dene = [url, 'https://api.allorigins.win/raw?url='+encodeURIComponent(url), 'https://corsproxy.io/?url='+encodeURIComponent(url)];
+  const ozel = (ls('slt_proxy')||'').trim(); if(ozel) dene.unshift(ozel+encodeURIComponent(url));
+  return Promise.any(dene.map(u => zamanAsimliFetch(u, 12000).then(t => { const o=JSON.parse(t); if(!o.events) throw 0; return o; })));
+}
+// ESPN tek gün kabul ediyor (?dates=YYYYMMDD; aralık biçimi 400 veriyor): dün + bugün (UTC) paralel çekilir
 async function espnCek(slug){
-  const simdi = Date.now();
-  const adresler = [`https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?dates=${ymd(simdi-86400e3)}-${ymd(simdi+86400e3)}`,
-                    `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard`];
-  for(const url of adresler){
-    const dene = [url, 'https://api.allorigins.win/raw?url='+encodeURIComponent(url), 'https://corsproxy.io/?url='+encodeURIComponent(url)];
-    const ozel = (ls('slt_proxy')||'').trim(); if(ozel) dene.unshift(ozel+encodeURIComponent(url));
-    try{
-      const j = await Promise.any(dene.map(u => zamanAsimliFetch(u, 12000).then(t => { const o=JSON.parse(t); if(!o.events) throw 0; return o; })));
-      const ev = j.events.map(e => { const c=e.competitions&&e.competitions[0]; if(!c) return null;
-        const h=c.competitors.find(x=>x.homeAway==='home'), a=c.competitors.find(x=>x.homeAway==='away'); if(!h||!a) return null;
-        const st=(e.status||c.status||{}); const ty=st.type||{};
-        return {t:Date.parse(e.date), ev:h.team.displayName, dep:a.team.displayName, evK:h.team.shortDisplayName, depK:a.team.shortDisplayName,
-                hs:+h.score||0, as:+a.score||0, durum:ty.state, detay:ty.shortDetail||'', dakika:st.displayClock||''}; }).filter(Boolean);
-      if(ev.length) return ev;
-    }catch(e){}
-  }
-  return [];
+  const kok = `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard`, simdi = Date.now();
+  const r = await Promise.allSettled([kok+'?dates='+ymd(simdi), kok+'?dates='+ymd(simdi-86400e3)].map(espnJson));
+  let ev = r.filter(x=>x.status==='fulfilled').flatMap(x=>espnOlaylar(x.value));
+  if(!ev.length){ try{ ev = espnOlaylar(await espnJson(kok)); }catch(e){} }
+  const tek = new Map(); ev.forEach(e => tek.set(e.id || (e.ev+e.t), e));
+  return [...tek.values()];
 }
 // Fikstürü ESPN maçıyla eşleştir: başlama saati ±30 dk + takım adı benzerliği
 function canliEslestir(fikstur, olaylar){
