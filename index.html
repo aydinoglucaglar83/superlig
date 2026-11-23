@@ -337,7 +337,9 @@ async function ligYukle(lig, zorla){
     const r = await veriCek(`${BASE}new/${lig.id}.csv`, /^Country,/, zorla);
     bilgi.push(r);
     const tum = csvOku(r.metin).map(ekSatirCevir).filter(Boolean);
-    const sezonlar = [...new Set(tum.map(m=>m.sezon))].sort();
+    // sezon adları dosya içinde biçim değiştirebiliyor ("2025/2026" → "2026"); sırayı tarihe göre belirle
+    const sonT = {}; for(const m of tum) sonT[m.sezon] = Math.max(sonT[m.sezon]||0, m.t);
+    const sezonlar = Object.keys(sonT).sort((a,b)=>sonT[a]-sonT[b]);
     const s = sezonlar[sezonlar.length-1], sOnce = sezonlar[sezonlar.length-2];
     sezonAd = s || '';
     guncel = tum.filter(m=>m.sezon===s);
