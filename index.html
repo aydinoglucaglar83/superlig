@@ -95,6 +95,9 @@ nav button.aktif{color:var(--vurgu)}
 .karar.oynama{background:#2a1215;border:1px solid #5c2026}
 .karar.yok{background:var(--kart2);border:1px solid var(--border);color:var(--gri)}
 .karar b{font-size:14px}
+.esikler{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.esikler span{background:var(--kart2);border-radius:7px;padding:4px 7px;font-size:12px}
+.esikler span b{color:var(--beyaz)}
 .grp{font-size:12px;color:var(--gri);font-weight:700;margin:4px 4px 2px;text-transform:uppercase}
 .canli .skor{font-size:18px;font-weight:800;letter-spacing:1px}
 .canli .nokta{display:inline-block;width:8px;height:8px;border-radius:50%;background:#ff4d4f;margin-right:6px;animation:yan 1.2s infinite}
@@ -130,7 +133,7 @@ nav button.aktif{color:var(--vurgu)}
         <div><label class="k">Ev sahibi</label><select id="evSec"></select></div>
         <div><label class="k">Deplasman</label><select id="depSec"></select></div>
       </div>
-      <label class="k">Senin oranların (İddaa vb.) — boş bırakırsan piyasa ortalaması kullanılır</label>
+      <label class="k">Bilyoner oranların — yaz ve Tahmin Et'e bas; bu maç için kaydedilir</label>
       <div class="satir oranlar">
         <input id="o1" inputmode="decimal" placeholder="1">
         <input id="oX" inputmode="decimal" placeholder="X">
@@ -254,7 +257,7 @@ const DEGER_MAX_ORAN = 7.0, DEGER_MIN_OLAS = 0.15; // uç sürpriz oranları ele
 const degerMi = (p, o) => o > 1 && o <= DEGER_MAX_ORAN && p >= DEGER_MIN_OLAS && p*o-1 > DEGER_ESIGI;
 const ONBELLEK_SURE = 3*3600e3;    // 3 saat
 const ONCEKI_SEZON_AGIRLIK = 0.4;  // geçen sezon maçları bu ağırlıkla modele katılır
-const SURUM = 'v1.7';
+const SURUM = 'v1.8';
 const KES_DELTA = 0.02, KES_MAX_ORAN = 5.0;      // keskin referansa göre en az %2 değer, oran ≤ 5
 const KELLY_KESIR = 0.25, KELLY_TAVAN = 0.03;     // ¼ Kelly, kasanın en fazla %3'ü
 const VARSAYILAN_ORANSIZ = {a:0.5, p:0.5, m:0};
@@ -998,7 +1001,7 @@ function maclariCiz(){
       <div class="takimlar">${esc(f.ev)} <span style="color:var(--gri)">–</span> ${esc(f.dep)}</div>
       <div class="canli" id="cl${idx}" style="display:none"></div>
       ${pillHtml(T.B, T.sec, S.filter(x=>x.pazar==='1X2'), f.oran)}
-      <div class="karar ${K.tip}">${K.html}</div>
+      <div class="karar ${K.tip}">${K.html}</div>${K.esik}
     </div>`;
   }).join('');
   el.querySelectorAll('.mac').forEach(k => k.onclick = () => {
@@ -1016,6 +1019,9 @@ function oranKutulariHazirla(f){
   const a = f && (f.k ? f.k.avg : null) || (f && f.oran);
   ph('o1', a&&a[0], '1'); ph('oX', a&&a[1], 'X'); ph('o2', a&&a[2], '2');
   const u = f && f.k && f.k.ouAvg; ph('oU', u&&u[0], 'Üst 2.5'); ph('oA', u&&u[1], 'Alt 2.5');
+  const b = f && bilOku(f);
+  if(b){ ['o1','oX','o2'].forEach((id,i)=>{ if(b['1X2'][i]) $(id).value = b['1X2'][i]; });
+         ['oU','oA'].forEach((id,i)=>{ if(b['OU'][i]) $(id).value = b['OU'][i]; }); }
 }
 function takimSecDoldur(){
   const takimlar = D ? [...new Set(D.sonuclar.flatMap(m=>[m.ev,m.dep]).concat(D.fikstur.flatMap(f=>[f.ev,f.dep])))].sort((a,b)=>a.localeCompare(b,'tr')) : [];
@@ -1037,6 +1043,7 @@ function tahminCiz(){
   const temiz = arr => arr.map(x => x && x>1 ? x : null);
   const senin = {'1X2': temiz(o), 'OU': temiz(ou)};   // tek tek girilebilir
   const f = seciliF && seciliF.ev===ev && seciliF.dep===dep ? seciliF : null;
+  if(f){ bilYaz(f, senin); setTimeout(maclariCiz, 0); }
   const oran = (senin['1X2'].every(x=>x) ? senin['1X2'] : null) || (f && f.oran) || null;
   const T = tahminEt(D.M, ev, dep, oran, D.W), A=T.A, P=T.P, B=T.B, w=T.w;
   const ad = [ev, 'Beraberlik', dep];
@@ -1079,21 +1086,31 @@ function tahminCiz(){
   </div>`;
 }
 
-// Maç için tek satırlık karar: OYNA / OYNAMA ve değer için gereken en düşük oran
+// ── Bilyoner oranları: kullanıcının girdiği oranlar maç başına saklanır ──
+const bilAnahtar = f => `${aktifLig ? aktifLig.id : ''}|${f.ev}|${f.dep}|${new Date(f.t).toISOString().slice(0,10)}`;
+function bilOku(f){ const m = ls('slt_bil') || {}; return f ? m[bilAnahtar(f)] || null : null; }
+function bilYaz(f, oranlar){
+  const m = ls('slt_bil') || {}, k = bilAnahtar(f);
+  const dolu = oranlar && (oranlar['1X2'].some(x=>x) || oranlar['OU'].some(x=>x));
+  if(dolu) m[k] = {...oranlar, t:f.t}; else delete m[k];
+  for(const x in m) if(m[x].t < Date.now() - 14*86400e3) delete m[x];   // 2 haftadan eskiyi temizle
+  ls('slt_bil', m);
+}
+// Değer için gereken en düşük oran (adil olasılık + %2)
 const minOran = p => (1 + KES_DELTA) / p;
 function macKarari(f){
-  const S = secenekler(f).filter(x => !x.zayif);
-  if(!S.length) return {tip:'yok', html:'— Not yok: bu maç için keskin piyasa (Betfair) oranı yok'};
-  const uygun = S.filter(x => minOran(x.p) <= KES_MAX_ORAN);   // oran tavanı içindeki seçenekler
-  const deger = uygun.filter(x => x.enIyiDeger).sort((a,b)=>b.enIyiEv-a.enIyiEv);
-  if(deger.length){
-    const x = deger[0];
-    return {tip:'oyna', html:`<span>✅ <b>OYNA: ${x.ad}</b> @${x.enIyi.toFixed(2)} <span class="yesil">+%${(x.enIyiEv*100).toFixed(1)}</span></span><span class="kucuk">en az ${minOran(x.p).toFixed(2)}</span>`};
+  const bil = bilOku(f);
+  const S = secenekler(f, bil).filter(x => !x.zayif);
+  if(!S.length) return {tip:'yok', html:'— Not yok: bu maç için keskin piyasa (Betfair) oranı yok', esik:''};
+  const esik = `<div class="esikler">${S.filter(x => minOran(x.p) <= KES_MAX_ORAN).map(x =>
+      `<span>${x.ad} ≥ <b>${minOran(x.p).toFixed(2)}</b></span>`).join('')}</div>`;
+  if(bil){
+    const d = S.filter(x => x.senDeger).sort((a,b)=>b.senEv-a.senEv);
+    if(d.length){ const x = d[0];
+      return {tip:'oyna', html:`<span>✅ <b>OYNA: ${x.ad}</b> @${x.sen.toFixed(2)} <span class="yesil">+%${(x.senEv*100).toFixed(1)}</span></span><span class="kucuk">Bilyoner oranına göre</span>`, esik}; }
+    return {tip:'oynama', html:`<span>⛔ <b>OYNAMA</b></span><span class="kucuk">girdiğin Bilyoner oranlarında değer yok</span>`, esik};
   }
-  // değer yok: değere en yakın seçeneği ve gereken oranı söyle
-  const yakin = uygun.filter(x => x.enIyi).sort((a,b)=>b.enIyiEv-a.enIyiEv)[0] || uygun[0];
-  if(!yakin) return {tip:'oynama', html:'<span>⛔ <b>OYNAMA</b></span><span class="kucuk">değer yok</span>'};
-  return {tip:'oynama', html:`<span>⛔ <b>OYNAMA</b> · değer yok</span><span class="kucuk">${yakin.ad} için en az <b>${minOran(yakin.p).toFixed(2)}</b> bulursan oyna</span>`};
+  return {tip:'yok', html:`<span>Bilyoner'de oranı bunlardan <b>yüksekse</b> oyna:</span>`, esik};
 }
 function keskinKart(f, senin){
   const S = secenekler(f, senin);
@@ -1119,8 +1136,8 @@ function keskinKart(f, senin){
   }, 0);
   return `<div class="kart"><h3>💎 Değer analizi (deney)</h3>
     <div class="kucuk" style="margin-bottom:6px">Adil olasılık: <b>${S[0].kaynak}</b>${zayif?' — keskin referans yok, değer önerilmez':''}. Bir oranın değerli sayılması için adil olasılıkla çarpımı en az %${KES_DELTA*100} kâr göstermeli (oran ≤ ${KES_MAX_ORAN}).</div>
-    <table class="dtab"><tr><th class="l">Seçim</th><th>Adil<br>olas./oran</th><th>En iyi<br>site</th><th>Senin<br>oranın</th><th></th></tr>${satirlar}</table>
-    <div class="kucuk" style="margin-top:6px">Kural: bir seçenek için oran en az <b>adil oran × 1.02</b> olmalı (Adil sütunundaki oranın %2 üstü). "En iyi site" birçok bahis sitesinin en yüksek oranıdır; Türkiye'den hepsine erişemeyebilirsin. Asıl ölçü "Senin oranın" sütunu: oranını yukarıya yaz, Tahmin Et'e bas.</div>
+    <table class="dtab"><tr><th class="l">Seçim</th><th>Adil<br>olas./oran</th><th>En iyi<br>site</th><th>Bilyoner<br>oranın</th><th></th></tr>${satirlar}</table>
+    <div class="kucuk" style="margin-top:6px">Kural: bir seçenek için oran en az <b>adil oran × 1.02</b> olmalı (Adil sütunundaki oranın %2 üstü). "En iyi site" birçok bahis sitesinin en yüksek oranıdır; Türkiye'den hepsine erişemeyebilirsin. Asıl ölçü "Bilyoner oranın" sütunu: oranları yukarıya yaz, Tahmin Et'e bas.</div>
   </div>`;
 }
 
