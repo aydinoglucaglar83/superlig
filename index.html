@@ -144,7 +144,7 @@ nav button.aktif{color:var(--vurgu)}
       <button id="logSil" class="ghost" style="width:100%">Kayıtlı tahminleri sil</button>
     </div>
     <div class="kart kucuk">
-      Model: son 5 maç formu, ev/deplasman performansı, rakip gücüne göre ağırlıklı puan, gol analizi ve beraberlik eğilimi (eski Python algoritması) + Poisson skor modeli + piyasa oranları. Üçünün ağırlıkları, sezonun oynanmış maçları üzerinde geriye dönük test edilerek her yenilemede otomatik ayarlanır. Bu bir istatistik aracıdır; kesin sonuç garantisi vermez.
+      <b>Skor Tahmin <span id="surum"></span></b><br>Model: son 5 maç formu, ev/deplasman performansı, rakip gücüne göre ağırlıklı puan, gol analizi ve beraberlik eğilimi (eski Python algoritması) + Poisson skor modeli + piyasa oranları. Üçünün ağırlıkları, sezonun oynanmış maçları üzerinde geriye dönük test edilerek her yenilemede otomatik ayarlanır. Bu bir istatistik aracıdır; kesin sonuç garantisi vermez.
     </div>
   </section>
 </main>
@@ -208,6 +208,9 @@ const DEGER_ESIGI = 0.05;          // beklenen değer > %5 ise "değerli oran"
 const DEGER_MAX_ORAN = 7.0, DEGER_MIN_OLAS = 0.15; // uç sürpriz oranları eleyen güvenlik sınırı
 const degerMi = (p, o) => o > 1 && o <= DEGER_MAX_ORAN && p >= DEGER_MIN_OLAS && p*o-1 > DEGER_ESIGI;
 const ONBELLEK_SURE = 3*3600e3;    // 3 saat
+const ONCEKI_SEZON_AGIRLIK = 0.4;  // geçen sezon maçları bu ağırlıkla modele katılır
+const SURUM = 'v1.1';
+const VARSAYILAN_ORANSIZ = {a:0.5, p:0.5, m:0};
 
 // ════════════════════════════════════════════════════════════
 //  YARDIMCILAR
@@ -264,24 +267,31 @@ async function zamanAsimliFetch(u, ms){
   try{ const r = await fetch(u, {signal:c.signal, cache:'no-store'}); if(!r.ok) throw new Error('HTTP '+r.status); return await r.text(); }
   finally{ clearTimeout(t); }
 }
+// 1) Uygulamanın kendi sitesindeki kopya (GitHub Actions her 3 saatte günceller) — en hızlı ve güvenilir yol
+// 2) Olmazsa: kendi proxy'n / doğrudan / ücretsiz proxy'ler AYNI ANDA denenir, ilk geçerli cevap kullanılır
 async function veriCek(url, basKontrol, zorla){
   const anahtar = 'slt_c_' + url;
   const onb = ls(anahtar);
   if(!zorla && onb && Date.now()-onb.t < ONBELLEK_SURE) return {metin:onb.m, kaynak:'önbellek', t:onb.t};
-  let sonHata = null;
-  for(const u of proxyListesi(url)){
-    try{
-      const m = await zamanAsimliFetch(u, 20000);
-      if(!basKontrol.test(m.replace(/^﻿/,'').slice(0,60))) throw new Error('beklenmeyen içerik');
-      if(!ls(anahtar, {t:Date.now(), m})){ // yer yoksa diğer liglerin önbelleğini boşalt
-        try{ Object.keys(localStorage).filter(k=>k.startsWith('slt_c_')).forEach(k=>localStorage.removeItem(k)); }catch(e){}
-        ls(anahtar, {t:Date.now(), m});
-      }
-      return {metin:m, kaynak:'canlı', t:Date.now()};
-    }catch(e){ sonHata = e; }
+  const gecerli = m => { if(!basKontrol.test(m.replace(/^﻿/,'').slice(0,60))) throw new Error('beklenmeyen içerik'); return m; };
+  const kaydet = m => {
+    if(!ls(anahtar, {t:Date.now(), m})){
+      try{ Object.keys(localStorage).filter(k=>k.startsWith('slt_c_')).forEach(k=>localStorage.removeItem(k)); }catch(e){}
+      ls(anahtar, {t:Date.now(), m});
+    }
+  };
+  const yerel = new URL('data/' + url.slice(BASE.length), location.href).href;
+  try{
+    const m = gecerli(await zamanAsimliFetch(yerel, 15000));
+    kaydet(m); return {metin:m, kaynak:'güncel', t:Date.now()};
+  }catch(e){}
+  try{
+    const m = await Promise.any(proxyListesi(url).map(u => zamanAsimliFetch(u, 25000).then(gecerli)));
+    kaydet(m); return {metin:m, kaynak:'canlı', t:Date.now()};
+  }catch(e){
+    if(onb) return {metin:onb.m, kaynak:'eski önbellek', t:onb.t, uyari:true};
+    throw new Error('veri alınamadı');
   }
-  if(onb) return {metin:onb.m, kaynak:'eski önbellek', t:onb.t, uyari:true};
-  throw sonHata || new Error('veri alınamadı');
 }
 
 function sezonKodu(bas){ const p = n => String(n%100).padStart(2,'0'); return p(bas)+p(bas+1); }
@@ -292,14 +302,16 @@ function anaSatirCevir(r){
   const hg = num(r.FTHG), ag = num(r.FTAG);
   const o = (a,b,c) => { const x=[num(r[a]),num(r[b]),num(r[c])]; return x.every(v=>v&&v>1) ? x : null; };
   const oran = o('AvgH','AvgD','AvgA') || o('B365H','B365D','B365A') || o('PSH','PSD','PSA') || o('AvgCH','AvgCD','AvgCA');
-  return {t, ev:r.HomeTeam, dep:r.AwayTeam, hg, ag, oran};
+  const oranMax = o('MaxH','MaxD','MaxA') || o('B365H','B365D','B365A') || o('PSH','PSD','PSA') || oran;
+  return {t, ev:r.HomeTeam, dep:r.AwayTeam, hg, ag, oran, oranMax};
 }
 function ekSatirCevir(r){
   const t = ukZamani(r.Date, r.Time); if(!t || !r.Home || !r.Away) return null;
   const hg = num(r.HG), ag = num(r.AG);
   const o = (a,b,c) => { const x=[num(r[a]),num(r[b]),num(r[c])]; return x.every(v=>v&&v>1) ? x : null; };
   const oran = o('AvgCH','AvgCD','AvgCA') || o('PSCH','PSCD','PSCA') || o('B365CH','B365CD','B365CA');
-  return {t, ev:r.Home, dep:r.Away, hg, ag, oran, sezon:r.Season};
+  const oranMax = o('MaxCH','MaxCD','MaxCA') || o('PSCH','PSCD','PSCA') || oran;
+  return {t, ev:r.Home, dep:r.Away, hg, ag, oran, oranMax, sezon:r.Season};
 }
 const oynandi = m => m.hg!==null && m.ag!==null;
 
@@ -307,17 +319,20 @@ async function ligYukle(lig, zorla){
   let guncel=[], onceki=[], fikstur=[], bilgi=[], sezonAd='';
   if(lig.tip==='ana'){
     let bas = guncelSezonBaslangic(), r;
+    const ay = new Date().getMonth();
     try{ r = await veriCek(`${BASE}mmz4281/${sezonKodu(bas)}/${lig.id}.csv`, /^Div,/, zorla); }
-    catch(e){ bas -= 1; r = await veriCek(`${BASE}mmz4281/${sezonKodu(bas)}/${lig.id}.csv`, /^Div,/, zorla); }
+    catch(e){
+      if(ay < 6 || ay > 8) throw e;   // sadece Temmuz–Eylül'de (yeni sezon dosyası henüz yokken) geçen sezona düş
+      bas -= 1; r = await veriCek(`${BASE}mmz4281/${sezonKodu(bas)}/${lig.id}.csv`, /^Div,/, zorla);
+    }
     bilgi.push(r);
     sezonAd = `${bas}/${bas+1}`;
     guncel = csvOku(r.metin).map(anaSatirCevir).filter(Boolean);
-    if(guncel.filter(oynandi).length < 60){
-      try{ const r2 = await veriCek(`${BASE}mmz4281/${sezonKodu(bas-1)}/${lig.id}.csv`, /^Div,/, zorla);
-           onceki = csvOku(r2.metin).map(anaSatirCevir).filter(Boolean).filter(oynandi); }catch(e){}
-    }
-    try{ const rf = await veriCek(`${BASE}fixtures.csv`, /^Div,/, zorla);
-         fikstur = csvOku(rf.metin).filter(x => x.Div===lig.id).map(anaSatirCevir).filter(Boolean); }catch(e){}
+    const [r2, rf] = await Promise.allSettled([
+      veriCek(`${BASE}mmz4281/${sezonKodu(bas-1)}/${lig.id}.csv`, /^Div,/, zorla),
+      veriCek(`${BASE}fixtures.csv`, /^Div,/, zorla)]);
+    if(r2.status==='fulfilled') onceki = csvOku(r2.value.metin).map(anaSatirCevir).filter(Boolean).filter(oynandi);
+    if(rf.status==='fulfilled') fikstur = csvOku(rf.value.metin).filter(x => x.Div===lig.id).map(anaSatirCevir).filter(Boolean);
   } else {
     const r = await veriCek(`${BASE}new/${lig.id}.csv`, /^Country,/, zorla);
     bilgi.push(r);
@@ -326,13 +341,15 @@ async function ligYukle(lig, zorla){
     const s = sezonlar[sezonlar.length-1], sOnce = sezonlar[sezonlar.length-2];
     sezonAd = s || '';
     guncel = tum.filter(m=>m.sezon===s);
-    if(guncel.filter(oynandi).length < 60 && sOnce) onceki = tum.filter(m=>m.sezon===sOnce && oynandi(m));
+    if(sOnce) onceki = tum.filter(m=>m.sezon===sOnce && oynandi(m));
     fikstur = guncel.filter(m => !oynandi(m));
   }
   const sonuclar = guncel.filter(oynandi).sort((a,b)=>a.t-b.t);
-  const oynananSet = new Set(sonuclar.map(m=>m.ev+'|'+m.dep));
   const simdi = Date.now();
-  fikstur = fikstur.filter(m => m.t > simdi - 3*3600e3 && !oynananSet.has(m.ev+'|'+m.dep)).sort((a,b)=>a.t-b.t);
+  // aynı eşleşme sezonda birden çok kez oynanabilir (İskoçya, play-off'lar): sadece yakın tarihte sonucu olanı ele
+  fikstur = fikstur.filter(f => f.t > simdi - 3*3600e3 &&
+    !sonuclar.some(r => r.ev===f.ev && r.dep===f.dep && Math.abs(r.t-f.t) < 3*86400e3)).sort((a,b)=>a.t-b.t);
+  onceki.forEach(m => m.w = ONCEKI_SEZON_AGIRLIK);
   onceki.sort((a,b)=>a.t-b.t);
   return {sonuclar, onceki, fikstur, sezonAd, bilgi};
 }
@@ -340,39 +357,42 @@ async function ligYukle(lig, zorla){
 // ════════════════════════════════════════════════════════════
 //  MODEL — eski Python algoritmasının birebir JS karşılığı + Poisson
 // ════════════════════════════════════════════════════════════
+// Her maçın ağırlığı w (bu sezon 1, geçen sezon ONCEKI_SEZON_AGIRLIK). Tüm ortalamalar ağırlıklıdır.
+const wOrt = (o, f) => { let a=0, b=0; for(const x of o){ a += f(x)*x.w; b += x.w; } return b ? a/b : null; };
 function modelKur(maclar){
-  const T = {}; let n=0, evGol=0, depGol=0, ber=0;
+  const T = {}; let n=0, wt=0, evGol=0, depGol=0, ber=0;
   const tk = ad => T[ad] || (T[ad] = {ad, oyun:[]});
   for(const m of maclar){
+    const w = m.w ?? 1;
     const sonuc = m.hg>m.ag ? 'G' : m.hg<m.ag ? 'M' : 'B';
-    tk(m.ev).oyun.push({t:m.t, ev:true, at:m.hg, yn:m.ag, rakip:m.dep, s:sonuc, p:sonuc==='G'?3:sonuc==='B'?1:0});
+    tk(m.ev).oyun.push({t:m.t, w, ev:true, at:m.hg, yn:m.ag, rakip:m.dep, s:sonuc, p:sonuc==='G'?3:sonuc==='B'?1:0});
     const s2 = sonuc==='G'?'M':sonuc==='M'?'G':'B';
-    tk(m.dep).oyun.push({t:m.t, ev:false, at:m.ag, yn:m.hg, rakip:m.ev, s:s2, p:s2==='G'?3:s2==='B'?1:0});
-    n++; evGol+=m.hg; depGol+=m.ag; if(m.hg===m.ag) ber++;
+    tk(m.dep).oyun.push({t:m.t, w, ev:false, at:m.ag, yn:m.hg, rakip:m.ev, s:s2, p:s2==='G'?3:s2==='B'?1:0});
+    n++; wt+=w; evGol+=m.hg*w; depGol+=m.ag*w; if(m.hg===m.ag) ber+=w;
   }
-  for(const k in T){ const o=T[k].oyun; T[k].ppg = o.length ? o.reduce((s,x)=>s+x.p,0)/o.length : 1.3; }
+  for(const k in T){ const v = wOrt(T[k].oyun, x=>x.p); T[k].ppg = v===null ? 1.3 : v; }
   const maxPpg = Math.max(0.1, ...Object.values(T).map(x=>x.ppg));
   return { T, n, maxPpg,
-    evOrt: n ? evGol/n : 1.45, depOrt: n ? depGol/n : 1.15, berOrt: n ? ber/n : 0.26 };
+    evOrt: wt ? evGol/wt : 1.45, depOrt: wt ? depGol/wt : 1.15, berOrt: wt ? ber/wt : 0.26 };
 }
 const takim = (M, ad) => M.T[ad] || {ad, oyun:[], ppg:1.3};
 
-function son5Form(M, ad){ const o=takim(M,ad).oyun.slice(-5); return o.length ? o.reduce((s,x)=>s+x.p,0)/(3*o.length)*100 : 50; }
+function son5Form(M, ad){ const v=wOrt(takim(M,ad).oyun.slice(-5), x=>x.p); return v===null ? 50 : v/3*100; }
 function son5Harf(M, ad){ return takim(M,ad).oyun.slice(-5).map(x=>x.s); }
-function evPerformans(M, ad){ const o=takim(M,ad).oyun.filter(x=>x.ev); return o.length ? o.reduce((s,x)=>s+x.p,0)/(3*o.length)*100 : 50; }
-function depPerformans(M, ad){ const o=takim(M,ad).oyun.filter(x=>!x.ev); return o.length ? o.reduce((s,x)=>s+x.p,0)/(3*o.length)*100 : 50; }
+function evPerformans(M, ad){ const v=wOrt(takim(M,ad).oyun.filter(x=>x.ev), x=>x.p); return v===null ? 50 : v/3*100; }
+function depPerformans(M, ad){ const v=wOrt(takim(M,ad).oyun.filter(x=>!x.ev), x=>x.p); return v===null ? 50 : v/3*100; }
 function rakipAgirlikliSkor(M, ad){
   const o = takim(M,ad).oyun; if(!o.length) return 50;
   let pay=0, payda=0;
-  for(const x of o){ const w = 0.5 + takim(M,x.rakip).ppg / M.maxPpg; pay += x.p*w; payda += 3*w; }
+  for(const x of o){ const w = (0.5 + takim(M,x.rakip).ppg / M.maxPpg) * x.w; pay += x.p*w; payda += 3*w; }
   return pay/payda*100;
 }
 function golAnalizi(M, ad){
   const o = takim(M,ad).oyun; const ort=(M.evOrt+M.depOrt)/2;
   if(!o.length) return [ort, ort];
-  return [o.reduce((s,x)=>s+x.at,0)/o.length, o.reduce((s,x)=>s+x.yn,0)/o.length];
+  return [wOrt(o, x=>x.at), wOrt(o, x=>x.yn)];
 }
-function berOrani(M, ad){ const o=takim(M,ad).oyun; return o.length ? o.filter(x=>x.s==='B').length/o.length : M.berOrt; }
+function berOrani(M, ad){ const v=wOrt(takim(M,ad).oyun, x=>x.s==='B'?1:0); return v===null ? M.berOrt : v; }
 function beraberlikSkoru(M, ev, dep){
   const dr = (berOrani(M,ev)+berOrani(M,dep))/2;
   const drN = clamp(dr/0.5*100, 0, 100);
@@ -393,8 +413,9 @@ function algoritma(M, ev, dep){
   const ev_s5=son5Form(M,ev), dep_s5=son5Form(M,dep), ev_ep=evPerformans(M,ev), dep_dp=depPerformans(M,dep);
   const ev_rak=rakipAgirlikliSkor(M,ev), dep_rak=rakipAgirlikliSkor(M,dep);
   const [ev_at,ev_yn]=golAnalizi(M,ev), [dep_at,dep_yn]=golAnalizi(M,dep);
-  const ev_guc = ev_s5*0.35 + ev_ep*0.30 + ev_rak*0.20 + (ev_at/Math.max(ev_yn,0.1))*10*0.15 + 8;
-  const dep_guc = dep_s5*0.35 + dep_dp*0.30 + dep_rak*0.20 + (dep_at/Math.max(dep_yn,0.1))*10*0.15;
+  const golOran = (a,y) => clamp(a/Math.max(y,0.1), 0.33, 3);  // sezon başında patlamasın
+  const ev_guc = ev_s5*0.35 + ev_ep*0.30 + ev_rak*0.20 + golOran(ev_at,ev_yn)*10*0.15 + 8;
+  const dep_guc = dep_s5*0.35 + dep_dp*0.30 + dep_rak*0.20 + golOran(dep_at,dep_yn)*10*0.15;
   const bere_ham = beraberlikSkoru(M,ev,dep);
   let bere = Math.trunc(15 + bere_ham/100*23);
   const kalan = 100-bere, toplam = Math.max(ev_guc+dep_guc, 0.001);
@@ -407,20 +428,22 @@ function faktoriyel(k){ let f=1; for(let i=2;i<=k;i++) f*=i; return f; }
 const pois = (l,k) => Math.exp(-l)*Math.pow(l,k)/faktoriyel(k);
 function poisson(M, ev, dep){
   const ort = (M.evOrt+M.depOrt)/2 || 1.3, K = 4;
-  const guc = ad => { const o=takim(M,ad).oyun, n=o.length; if(!n) return [1,1];
-    const at=o.reduce((s,x)=>s+x.at,0)/n/ort, yn=o.reduce((s,x)=>s+x.yn,0)/n/ort;
+  const guc = ad => { const o=takim(M,ad).oyun; if(!o.length) return [0.85,1.15]; // yeni/çıkan takım: biraz zayıf varsay
+    const n=o.reduce((s,x)=>s+x.w,0), at=wOrt(o,x=>x.at)/ort, yn=wOrt(o,x=>x.yn)/ort;
     return [(n*at+K)/(n+K), (n*yn+K)/(n+K)]; };
   const [eAt,eSav]=guc(ev), [dAt,dSav]=guc(dep);
   const lH = clamp(M.evOrt*eAt*dSav, 0.15, 4.5), lA = clamp(M.depOrt*dAt*eSav, 0.15, 4.5);
   let p1=0,px=0,p2=0,ust=0,kg=0; const skorlar=[];
+  const RHO = -0.1; // Dixon-Coles düşük skor düzeltmesi (0-0, 1-1 biraz daha olası)
+  const tau = (i,j) => i===0&&j===0 ? 1-lH*lA*RHO : i===0&&j===1 ? 1+lH*RHO : i===1&&j===0 ? 1+lA*RHO : i===1&&j===1 ? 1-RHO : 1;
   for(let i=0;i<=8;i++) for(let j=0;j<=8;j++){
-    const p = pois(lH,i)*pois(lA,j);
+    const p = pois(lH,i)*pois(lA,j)*tau(i,j);
     if(i>j) p1+=p; else if(i===j) px+=p; else p2+=p;
     if(i+j>2) ust+=p; if(i>0&&j>0) kg+=p;
     skorlar.push({i,j,p});
   }
-  const top = p1+px+p2; skorlar.sort((a,b)=>b.p-a.p);
-  return {p:[p1/top, px/top, p2/top], lH, lA, ust, kg, skorlar};
+  const top = p1+px+p2; skorlar.forEach(s=>s.p/=top); skorlar.sort((a,b)=>b.p-a.p);
+  return {p:[p1/top, px/top, p2/top], lH, lA, ust:ust/top, kg:kg/top, skorlar};
 }
 function piyasa(oran){
   if(!oran || oran.some(o=>!o||o<=1)) return null;
@@ -431,62 +454,84 @@ function karistir(A, P, Mk, w){
   let a=w.a, p=w.p, m=Mk?w.m:0; const s=a+p+m || 1;
   return [0,1,2].map(i => (a*A[i] + p*P[i] + (Mk?m*Mk[i]:0))/s);
 }
-function tahminEt(M, ev, dep, oran, w){
+const wSec = (W, varMk) => varMk ? W.mk : W.yok;
+function tahminEt(M, ev, dep, oran, W){
   const A = algoritma(M,ev,dep), P = poisson(M,ev,dep), Mk = piyasa(oran);
+  const w = wSec(W, !!Mk);
   const B = karistir(A.p, P.p, Mk && Mk.p, w);
   const sec = B.indexOf(Math.max(...B));
   const uygun = P.skorlar.filter(s => (sec===0 ? s.i>s.j : sec===1 ? s.i===s.j : s.i<s.j));
   const deger = [];
   if(oran) for(let i=0;i<3;i++){ if(degerMi(B[i], oran[i])) deger.push({i, oran:oran[i], ev:B[i]*oran[i]-1}); }
   deger.sort((a,b)=>b.ev-a.ev);
-  return {A, P, Mk, B, sec, skor: uygun[0] || P.skorlar[0], deger};
+  return {A, P, Mk, B, w, sec, skor: uygun[0] || P.skorlar[0], deger};
 }
 
 // ════════════════════════════════════════════════════════════
 //  GERİYE DÖNÜK TEST + AĞIRLIK OPTİMİZASYONU (kendi kendini güncelleme)
 // ════════════════════════════════════════════════════════════
+const yeterliOyun = (M, ad) => takim(M,ad).oyun.length >= 3;
 function geriTest(sonuclar, onceki){
   const tum = onceki.concat(sonuclar);
   const ilkGuncel = sonuclar.length ? sonuclar[0].t : Infinity;
-  const kayitlar = []; let i = 0;
-  const gunAnahtar = t => Math.floor((t + 3*3600e3) / 86400e3);
-  while(i < tum.length){
-    const gun = gunAnahtar(tum[i].t); let j = i;
-    while(j < tum.length && gunAnahtar(tum[j].t) === gun) j++;
-    if(tum[i].t >= ilkGuncel && i >= 20){
-      const M = modelKur(tum.slice(0, i));
-      for(let k=i;k<j;k++){
-        const m = tum[k];
-        if(takim(M,m.ev).oyun.length < 3 || takim(M,m.dep).oyun.length < 3) continue;
-        const A = algoritma(M,m.ev,m.dep).p, P = poisson(M,m.ev,m.dep).p, Mk = piyasa(m.oran);
-        kayitlar.push({A, P, Mk: Mk && Mk.p, oran: m.oran, r: m.hg>m.ag?0:m.hg===m.ag?1:2});
-      }
-    }
-    i = j;
+  const kayitlar = []; let sonE = -1, M = null, e = 0;
+  for(let i=0;i<tum.length;i++){
+    const m = tum[i]; if(m.t < ilkGuncel) continue;
+    // sızıntı yok: sadece bu maçın başlamasından en az 2.5 saat önce başlamış (bitmiş) maçlar kullanılır
+    const kes = m.t - 2.5*3600e3;
+    while(e < tum.length && tum[e].t <= kes) e++;
+    if(e < 20) continue;
+    if(e !== sonE){ M = modelKur(tum.slice(0, e)); sonE = e; }
+    if(!yeterliOyun(M,m.ev) || !yeterliOyun(M,m.dep)) continue;
+    const A = algoritma(M,m.ev,m.dep).p, P = poisson(M,m.ev,m.dep).p, Mk = piyasa(m.oran);
+    kayitlar.push({t:m.t, A, P, Mk: Mk && Mk.p, oran: m.oran, oranMax: m.oranMax, r: m.hg>m.ag?0:m.hg===m.ag?1:2});
   }
   return kayitlar;
 }
 function logKayip(K, w){
   let s=0; for(const k of K){ const B=karistir(k.A,k.P,k.Mk,w); s -= Math.log(Math.max(B[k.r],1e-6)); } return s/K.length;
 }
-function agirlikOptimize(K){
-  if(K.length < 25) return {...VARSAYILAN_AGIRLIK, varsayilan:true};
-  let en = null;
-  for(let a=0;a<=1.0001;a+=0.05) for(let p=0;p<=1.0001-a;p+=0.05){
-    const w = {a:+a.toFixed(2), p:+p.toFixed(2), m:+(1-a-p).toFixed(2)};
-    if(w.a+w.p===0) continue; // piyasasız maçlar için en az bir model gerekli
-    const l = logKayip(K, w); if(!en || l < en.l) en = {...w, l};
-  }
-  return en;
+// Oranlı maçlar için (algo, poisson, piyasa) ve oransız maçlar için (algo, poisson) ayrı ağırlık seti
+function agirlikBul(K){
+  const W = {mk:{...VARSAYILAN_AGIRLIK, varsayilan:true}, yok:{...VARSAYILAN_ORANSIZ, varsayilan:true}};
+  const KM = K.filter(k=>k.Mk);
+  if(KM.length >= 25){ let en=null;
+    for(let a=0;a<=1.0001;a+=0.05) for(let p=0;p<=1.0001-a;p+=0.05){
+      const w = {a:+a.toFixed(2), p:+p.toFixed(2), m:Math.max(0,+(1-a-p).toFixed(2))};
+      const l = logKayip(KM, w); if(!en || l < en.l) en = {...w, l}; }
+    W.mk = en; }
+  if(K.length >= 25){ let en=null; const K0 = K.map(k=>({...k, Mk:null}));
+    for(let a=0;a<=1.0001;a+=0.05){ const w={a:+a.toFixed(2), p:+(1-a).toFixed(2), m:0};
+      const l = logKayip(K0, w); if(!en || l < en.l) en = {...w, l}; }
+    W.yok = en; }
+  return W;
 }
-function basariOzeti(K, w){
-  const say = f => { let d=0,n=0; for(const k of K){ const p=f(k); if(!p) continue; n++; if(p.indexOf(Math.max(...p))===k.r) d++; } return {d,n,o:n?d/n:0}; };
-  const birlesik = say(k=>karistir(k.A,k.P,k.Mk,w)), algo = say(k=>k.A), poi = say(k=>k.P), piy = say(k=>k.Mk);
-  let bahis=0, kar=0, tut=0;
-  for(const k of K){ if(!k.oran) continue; const B=karistir(k.A,k.P,k.Mk,w);
-    let en=null; for(let i=0;i<3;i++){ const e=B[i]*k.oran[i]-1; if(degerMi(B[i],k.oran[i]) && (!en||e>en.e)) en={i,e}; }
-    if(en){ bahis++; if(en.i===k.r){ tut++; kar += k.oran[en.i]-1; } else kar -= 1; } }
-  return {birlesik, algo, poi, piy, deger:{bahis, tut, kar, roi: bahis ? kar/bahis : 0}};
+// Gerçek örneklem dışı ölçüm: her maç, yalnızca kendisinden ÖNCEKİ maçlarda öğrenilmiş ağırlıklarla puanlanır
+function ileriTest(K){
+  const out = []; let W = agirlikBul([]), son = 0;
+  for(let i=0;i<K.length;i++){
+    if(i >= 25 && i - son >= 10){ W = agirlikBul(K.slice(0,i)); son = i; }
+    const k = K[i]; out.push({...k, B: karistir(k.A, k.P, k.Mk, wSec(W, !!k.Mk))});
+  }
+  return out;
+}
+function basariOzeti(KB){
+  const ortak = KB.filter(k=>k.Mk);
+  const kume = ortak.length >= 20 ? ortak : KB;           // tüm modeller aynı maç kümesinde karşılaştırılır
+  const olc = f => { let d=0,n=0,l=0; for(const k of kume){ const p=f(k); if(!p) continue; n++;
+      if(p.indexOf(Math.max(...p))===k.r) d++; l -= Math.log(Math.max(p[k.r],1e-6)); }
+    return {d, n, o: n?d/n:0, ll: n?l/n:null}; };
+  const sonuc = {kumeOrtak: kume===ortak, birlesik: olc(k=>k.B), algo: olc(k=>k.A), poi: olc(k=>k.P), piy: olc(k=>k.Mk),
+                 hepsi: {n: KB.length, d: KB.filter(k=>k.B.indexOf(Math.max(...k.B))===k.r).length}};
+  // değerli oran: tespit ortalama oranla, kazanç oynanabilir en yüksek oranla
+  const getiri = [];
+  for(const k of KB){ if(!k.oran) continue; let en=null;
+    for(let i=0;i<3;i++){ const e=k.B[i]*k.oran[i]-1; if(degerMi(k.B[i],k.oran[i]) && (!en||e>en.e)) en={i,e}; }
+    if(en){ const o = (k.oranMax||k.oran)[en.i]; getiri.push(en.i===k.r ? o-1 : -1); } }
+  const n = getiri.length, kar = getiri.reduce((a,b)=>a+b,0), ort = n ? kar/n : 0;
+  const sd = n>1 ? Math.sqrt(getiri.reduce((a,g)=>a+(g-ort)**2,0)/(n-1)) : 0;
+  sonuc.deger = {bahis:n, tut:getiri.filter(g=>g>0).length, kar, roi:ort, ga: n>1 ? 1.96*sd/Math.sqrt(n) : null};
+  return sonuc;
 }
 
 // ════════════════════════════════════════════════════════════
@@ -494,26 +539,34 @@ function basariOzeti(K, w){
 // ════════════════════════════════════════════════════════════
 function logOku(){ return ls('slt_log') || {}; }
 function logYaz(L){ ls('slt_log', L); }
+const sonucKodu = sk => sk[0]>sk[1]?0:sk[0]===sk[1]?1:2;
 function tahminleriKaydet(lig, D){
-  const L = logOku(), simdi = Date.now(); let degisti=false;
+  const L = logOku(), simdi = Date.now();
   for(const f of D.fikstur){
     if(f.t <= simdi) continue;
-    if(takim(D.M,f.ev).oyun.length===0 && takim(D.M,f.dep).oyun.length===0) continue;
-    const T = tahminEt(D.M, f.ev, f.dep, f.oran, D.w);
-    const key = `${lig.id}|${f.ev}|${f.dep}|${D.sezonAd}`;
-    const eski = L[key];
-    if(eski && eski.sonuc) continue;
+    if(!yeterliOyun(D.M,f.ev) || !yeterliOyun(D.M,f.dep)) continue;   // geriye dönük testle aynı kural
+    const key = `${lig.id}|${f.ev}|${f.dep}|${new Date(f.t).toISOString().slice(0,10)}`;
+    if(L[key] && L[key].sonuc) continue;
+    // ertelenen maç: aynı eşleşmenin sonuçlanmamış eski kaydını sil
+    for(const k2 in L){ const x=L[k2]; if(k2!==key && !x.sonuc && x.lig===lig.id && x.ev===f.ev && x.dep===f.dep && Math.abs(x.t-f.t) < 45*86400e3) delete L[k2]; }
+    const T = tahminEt(D.M, f.ev, f.dep, f.oran, D.W);
     L[key] = {lig:lig.id, ev:f.ev, dep:f.dep, t:f.t, sec:T.sec, B:T.B.map(x=>+x.toFixed(3)), skor:[T.skor.i,T.skor.j],
               deger: T.deger[0] ? {i:T.deger[0].i, oran:T.deger[0].oran} : null, kayit: simdi};
-    degisti = true;
   }
-  // sonuçları eşleştir
-  for(const key in L){
+  // sonuç eşleştir: aynı eşleşmenin kayıttan sonraki en yakın, başka kayda atanmamış sonucu
+  const kullanilan = new Set(Object.values(L).filter(x=>x.lig===lig.id && x.sonucT).map(x=>`${x.ev}|${x.dep}|${x.sonucT}`));
+  for(const key of Object.keys(L).sort((a,b)=>L[a].t-L[b].t)){
     const k = L[key]; if(k.lig!==lig.id || k.sonuc) continue;
-    const m = D.sonuclar.find(x => x.ev===k.ev && x.dep===k.dep && x.t > k.t - 4*86400e3);
-    if(m){ k.sonuc = [m.hg, m.ag]; degisti = true; }
+    let en = null;
+    for(const m of D.sonuclar){
+      if(m.ev!==k.ev || m.dep!==k.dep || m.t < k.t-4*86400e3 || m.t > k.t+60*86400e3) continue;
+      if(kullanilan.has(`${m.ev}|${m.dep}|${m.t}`)) continue;
+      if(!en || Math.abs(m.t-k.t) < Math.abs(en.t-k.t)) en = m;
+    }
+    if(en){ k.sonuc=[en.hg, en.ag]; k.sonucT=en.t; kullanilan.add(`${en.ev}|${en.dep}|${en.t}`); }
   }
-  if(degisti) logYaz(L);
+  for(const key in L) if(L[key].sonuc && simdi - L[key].t > 400*86400e3) delete L[key];  // 400 günden eski sonuçlananları temizle
+  if(!logYaz(L)) durum('Uyarı: tahmin kaydı telefona yazılamadı (depolama dolu olabilir).', true);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -540,14 +593,15 @@ async function yukle(zorla){
     if(aktifLig !== lig) return;
     const M = modelKur(V.onceki.concat(V.sonuclar));
     const K = geriTest(V.sonuclar, V.onceki);
-    const w = agirlikOptimize(K);
-    const ozet = K.length ? basariOzeti(K, w) : null;
-    D = {...V, M, K, w, ozet};
+    const W = agirlikBul(K);                       // canlı tahminler için tüm geçmişten öğrenilen ağırlıklar
+    const ozet = K.length ? basariOzeti(ileriTest(K)) : null;   // başarı ölçümü örneklem dışı
+    D = {...V, M, K, W, ozet};
     tahminleriKaydet(lig, D);
     const b = V.bilgi[0];
     durum(`${lig.ad} ${esc(V.sezonAd)} · ${V.sonuclar.length} maç · ${b.kaynak} veri (${tarihYaz(b.t)})${b.uyari?' — internet yok, eski veri gösteriliyor':''}`, b.uyari);
     hepsiniCiz();
   }catch(e){
+    if(aktifLig !== lig) return;   // bu arada başka lig seçildiyse eski hatayı gösterme
     D = null; hepsiniCiz();
     durum(`Veri alınamadı (${esc(e.message)}). İnternet bağlantını kontrol edip ⟳ ile tekrar dene; sorun sürerse Ayarlar'dan kendi proxy adresini gir.`, true);
   }
@@ -567,7 +621,7 @@ function maclariCiz(){
     el.innerHTML = `<div class="bos">Bu lig için yaklaşan maç listesi kaynakta yok.<br><br>Tahmin sekmesinden takımları kendin seçebilirsin.</div>`; return;
   }
   el.innerHTML = D.fikstur.map((f,idx) => {
-    const T = tahminEt(D.M, f.ev, f.dep, f.oran, D.w);
+    const T = tahminEt(D.M, f.ev, f.dep, f.oran, D.W);
     const d = T.deger[0];
     return `<div class="kart mac" data-i="${idx}">
       <div class="ust"><span>${tarihYaz(f.t)}</span><span>Skor tahmini: <b style="color:var(--beyaz)">${T.skor.i}-${T.skor.j}</b>${d?`<span class="rozet">💎 Değerli ${['1','X','2'][d.i]}</span>`:''}</span></div>
@@ -600,7 +654,7 @@ function tahminCiz(){
   if(!ev || !dep || ev===dep){ el.innerHTML='<div class="bos">İki farklı takım seç.</div>'; return; }
   const o=[num($('o1').value), num($('oX').value), num($('o2').value)];
   const oran = o.every(x=>x&&x>1) ? o : null;
-  const T = tahminEt(D.M, ev, dep, oran, D.w), A=T.A, P=T.P, B=T.B;
+  const T = tahminEt(D.M, ev, dep, oran, D.W), A=T.A, P=T.P, B=T.B, w=T.w;
   const ad = [ev, 'Beraberlik', dep];
   const guven = Math.max(...B) >= 0.55 ? 'Yüksek' : Math.max(...B) >= 0.45 ? 'Orta' : 'Düşük';
   const satir = (k,v) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`;
@@ -624,9 +678,9 @@ function tahminCiz(){
   </div>
   <div class="kart">
     <h3>Modeller</h3>
-    ${satir(`Algoritma (ağırlık %${yuzde(D.w.a)})`, p3(A.p))}
-    ${satir(`Poisson (ağırlık %${yuzde(D.w.p)})`, p3(P.p))}
-    ${satir(`Piyasa (ağırlık %${yuzde(D.w.m)})`, p3(T.Mk&&T.Mk.p))}
+    ${satir(`Algoritma (ağırlık %${yuzde(w.a)})`, p3(A.p))}
+    ${satir(`Poisson (ağırlık %${yuzde(w.p)})`, p3(P.p))}
+    ${satir(`Piyasa (ağırlık %${yuzde(T.Mk?w.m:0)})`, p3(T.Mk&&T.Mk.p))}
     ${satir('<b>Birleşik</b>', '<b>'+p3(B)+'</b>')}
     ${satir('Beklenen gol (ev – dep)', P.lH.toFixed(2)+' – '+P.lA.toFixed(2))}
     ${satir('2.5 Üst / KG Var', '%'+yuzde(P.ust)+' / %'+yuzde(P.kg))}
@@ -664,20 +718,27 @@ function puanCiz(){
 function basariCiz(){
   const el = $('basariIcerik');
   if(!D){ el.innerHTML='<div class="bos">Veri yok.</div>'; return; }
-  const O = D.ozet, w = D.w;
+  const O = D.ozet, W = D.W;
   const oy = x => x.n ? `%${(x.o*100).toFixed(1)} <span style="color:var(--gri)">(${x.d}/${x.n})</span>` : '—';
+  const ll = x => x.ll!==null && x.n ? x.ll.toFixed(3) : '—';
   const satir = (k,v) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`;
+  const ag = w => `Algo %${yuzde(w.a)} · Poisson %${yuzde(w.p)}${w.m?` · Oran %${yuzde(w.m)}`:''}${w.varsayilan?' (varsayılan)':''}`;
   let h = `<div class="kart"><h3>Bu sezon geriye dönük test</h3>`;
   if(!O || !D.K.length){ h += '<div class="kucuk">Test için yeterli oynanmış maç yok.</div></div>'; }
   else {
-    h += `<div class="kucuk" style="margin-bottom:6px">Oynanmış her maç, yalnızca o günden önceki verilerle tahmin edildi.</div>`
-      + satir('<b>Uygulamanın tahmini (1X2)</b>', '<b>'+oy(O.birlesik)+'</b>')
-      + satir('Sadece algoritma', oy(O.algo)) + satir('Sadece Poisson', oy(O.poi)) + satir('Sadece oranlar (favori)', oy(O.piy))
+    const dg = O.deger;
+    h += `<div class="kucuk" style="margin-bottom:6px">Her maç yalnızca kendinden önceki verilerle ve önceki maçlarda öğrenilmiş ağırlıklarla tahmin edildi (gerçek örneklem dışı).</div>`
+      + satir('<b>Uygulamanın tahmini (tüm maçlar)</b>', `<b>%${(O.hepsi.d/O.hepsi.n*100).toFixed(1)}</b> <span style="color:var(--gri)">(${O.hepsi.d}/${O.hepsi.n})</span>`)
+      + `<div class="kucuk" style="margin:8px 0 2px">Karşılaştırma (${O.kumeOrtak?'oranı olan':'tüm'} maçlar) — isabet · log-kayıp (düşük = iyi)</div>`
+      + satir('Uygulama (birleşik)', oy(O.birlesik)+' · '+ll(O.birlesik))
+      + satir('Sadece algoritma', oy(O.algo)+' · '+ll(O.algo)) + satir('Sadece Poisson', oy(O.poi)+' · '+ll(O.poi))
+      + satir('Sadece oranlar', oy(O.piy)+' · '+ll(O.piy))
       + `<div style="height:8px"></div>`
-      + satir('Öğrenilen ağırlıklar', `Algo %${yuzde(w.a)} · Poisson %${yuzde(w.p)} · Oran %${yuzde(w.m)}${w.varsayilan?' (varsayılan)':''}`)
-      + satir('💎 Değerli oran önerileri', O.deger.bahis ? `${O.deger.bahis} öneri, ${O.deger.tut} tuttu` : '—')
-      + satir('💎 1 birim bahisle kâr/zarar', O.deger.bahis ? `<b style="color:${O.deger.kar>=0?'#56d364':'#ff7b72'}">${O.deger.kar>=0?'+':''}${O.deger.kar.toFixed(2)} birim (ROI %${(O.deger.roi*100).toFixed(1)})</b>` : '—')
-      + `<div class="kucuk" style="margin-top:8px">Ağırlıklar bu maçlara göre seçildiği için test sonucu gerçek performanstan biraz iyimser olabilir; asıl ölçü aşağıdaki canlı kayıttır.</div></div>`;
+      + satir('Ağırlık (oranlı maç)', ag(W.mk)) + satir('Ağırlık (oransız maç)', ag(W.yok))
+      + satir('💎 Değerli oran önerileri', dg.bahis ? `${dg.bahis} öneri, ${dg.tut} tuttu` : '—')
+      + satir('💎 1 birim bahisle kâr/zarar', dg.bahis ? `<b style="color:${dg.kar>=0?'#56d364':'#ff7b72'}">${dg.kar>=0?'+':''}${dg.kar.toFixed(2)} birim</b>` : '—')
+      + satir('💎 ROI (%95 güven aralığı)', dg.bahis ? `%${(dg.roi*100).toFixed(1)}${dg.ga!==null?` ± ${(dg.ga*100).toFixed(0)}`:''}` : '—')
+      + `<div class="kucuk" style="margin-top:8px">Log-kayıp, olasılıkların ne kadar isabetli olduğunu ölçer; 1X2'de isabet yüzdesinden daha güvenilirdir. Değerli oran kazancı, maçın en yüksek oranıyla hesaplanır. Güven aralığı sıfırı içeriyorsa sonuç şans olabilir.</div></div>`;
   }
   const L = logOku(); const kay = Object.values(L).filter(k=>k.lig===aktifLig.id).sort((a,b)=>b.t-a.t);
   const biten = kay.filter(k=>k.sonuc);
@@ -733,6 +794,7 @@ $('indirBtn').onclick = async () => {
 };
 if('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
 
+$('surum').textContent = SURUM;
 ligListesiDoldur();
 yukle(false);
 </script>
