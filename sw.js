@@ -1,6 +1,6 @@
 // Skor Tahmin service worker: uygulama kabuğunu önbelleğe alır (çevrimdışı açılış için).
 // Veri istekleri (football-data / ESPN / proxy) hiç önbelleğe alınmaz; uygulama kendi önbelleğini kullanır.
-const CACHE = 'skor-tahmin-v3.1';
+const CACHE = 'skor-tahmin-v3.2';
 const KABUK = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

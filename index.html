@@ -316,7 +316,7 @@ const DEGER_MAX_ORAN = 7.0, DEGER_MIN_OLAS = 0.15; // uç sürpriz oranları ele
 const degerMi = (p, o) => o > 1 && o <= DEGER_MAX_ORAN && p >= DEGER_MIN_OLAS && p*o-1 > DEGER_ESIGI;
 const ONBELLEK_SURE = 3*3600e3;    // 3 saat
 const ONCEKI_SEZON_AGIRLIK = 0.4;  // geçen sezon maçları bu ağırlıkla modele katılır
-const SURUM = 'v3.1';
+const SURUM = 'v3.2';
 const KES_DELTA = 0.02, KES_MAX_ORAN = 5.0;      // keskin referansa göre en az %2 değer, oran ≤ 5
 const KELLY_KESIR = 0.25, KELLY_TAVAN = 0.03;     // ¼ Kelly, kasanın en fazla %3'ü
 const VARSAYILAN_ORANSIZ = {a:0.5, p:0.5, m:0};
@@ -347,8 +347,8 @@ function ukZamani(tarih, saat){
   const bst = utcVarsay - 3600e3 >= bstBas && utcVarsay - 3600e3 < bstSon;
   return utcVarsay - (bst ? 3600e3 : 0);
 }
-const tarihYaz = ms => new Date(ms).toLocaleString('tr-TR',{weekday:'short',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
-const gunYaz = ms => new Date(ms).toLocaleDateString('tr-TR',{day:'2-digit',month:'short'});
+const tarihYaz = ms => new Date(ms).toLocaleString('tr-TR',{timeZone:'Europe/Istanbul',weekday:'short',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) + ' TSİ';
+const gunYaz = ms => new Date(ms).toLocaleDateString('tr-TR',{timeZone:'Europe/Istanbul',day:'2-digit',month:'short'});
 
 function csvOku(metin){
   metin = metin.replace(/^﻿/, '');
@@ -899,7 +899,7 @@ async function canliGuncelle(){
   const olaylar = await espnCek(ESPN[lig.id]);
   if(lig !== aktifLig || fik !== (D && D.fikstur)) return;
   canliVeri = canliEslestir(fik, olaylar); canliSon = Date.now();
-  canliDurum = !olaylar.length ? '⚠️ canlı skor alınamadı (' + espnSonHata + ')' : `canlı skor (${canliKaynak}) ${new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})} · ${canliVeri.size} maç eşleşti`;
+  canliDurum = !olaylar.length ? '⚠️ canlı skor alınamadı (' + espnSonHata + ')' : `canlı skor (${canliKaynak}) ${new Date().toLocaleTimeString('tr-TR',{timeZone:'Europe/Istanbul',hour:'2-digit',minute:'2-digit'})} · ${canliVeri.size} maç eşleşti`;
   const e = $('canliDurum'); if(e) e.textContent = ' · ' + canliDurum;
   canliCiz();
 }
@@ -972,8 +972,8 @@ function canliSekmeCiz(){
       if(f){ const T = kartTahmin(f); const lbl=['1','X','2'][T.sec];
         if(e.durum==='post'){ const r=e.hs>e.as?0:e.hs===e.as?1:2; tah = `Tahmin ${lbl} · ${T.skor.i}-${T.skor.j} ${r===T.sec?'<span class="rozet y">✓</span>':'<span class="rozet k">✗</span>'}`; }
         else tah = `Tahmin: <b>${lbl}</b> (%${yuzde(T.B[T.sec])}) · skor ${T.skor.i}-${T.skor.j}`; }
-      const dk = e.durum==='in' ? `<div class="dk in">● ${esc(e.detay||e.dakika)}</div>` : e.durum==='post' ? `<div class="dk">MS<br>${new Date(e.t).toLocaleDateString('tr-TR',{day:'2-digit',month:'short'})}</div>`
-               : `<div class="dk">${new Date(e.t).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}<br>${new Date(e.t).toLocaleDateString('tr-TR',{day:'2-digit',month:'short'})}</div>`;
+      const dk = e.durum==='in' ? `<div class="dk in">● ${esc(e.detay||e.dakika)}</div>` : e.durum==='post' ? `<div class="dk">MS<br>${new Date(e.t).toLocaleDateString('tr-TR',{timeZone:'Europe/Istanbul',day:'2-digit',month:'short'})}</div>`
+               : `<div class="dk">${new Date(e.t).toLocaleTimeString('tr-TR',{timeZone:'Europe/Istanbul',hour:'2-digit',minute:'2-digit'})}<br>${new Date(e.t).toLocaleDateString('tr-TR',{timeZone:'Europe/Istanbul',day:'2-digit',month:'short'})}</div>`;
       const sk = e.durum==='pre' ? '<div class="sk" style="color:var(--gri)">–<br>–</div>' : `<div class="sk">${e.hs}<br>${e.as}</div>`;
       return `<div class="cs">${dk}<div class="tk">${esc(e.ev)}<br>${esc(e.dep)}${tah?`<div class="alt2">${tah}</div>`:''}</div>${sk}</div>`;
     }).join('') : '';
@@ -982,7 +982,7 @@ function canliSekmeCiz(){
   }).join('');
   el.innerHTML = html || '<div class="bos">Son 4 gün ve önümüzdeki 3 günde bu lig(ler)de maç yok.</div>';
   $('canliBilgi').innerHTML = hata===canliSekmeVeri.length ? '⚠️ Canlı skor alınamadı. İnterneti kontrol et; ⟳ ile tekrar dene.'
-    : `Kaynak: ${canliKaynak||'—'} · ${canliN} canlı maç · ${toplam} maç · son güncelleme ${new Date(canliSekmeZaman).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})} (dakikada bir yenilenir)`;
+    : `Kaynak: ${canliKaynak||'—'} · ${canliN} canlı maç · ${toplam} maç · son güncelleme ${new Date(canliSekmeZaman).toLocaleTimeString('tr-TR',{timeZone:'Europe/Istanbul',hour:'2-digit',minute:'2-digit'})} (dakikada bir yenilenir)`;
 }
 setInterval(() => { if(!document.hidden && $('e-canli').classList.contains('aktif')) canliSekmeYukle(); }, 60e3);
 
@@ -1124,7 +1124,7 @@ function kararHesap(f){
 }
 function kararKartHtml(f, i){
   const H = kararHesap(f), lig = LIGLER.find(l => l.id===f.lig);
-  const saat = new Date(f.t).toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'});
+  const saat = new Date(f.t).toLocaleTimeString('tr-TR',{timeZone:'Europe/Istanbul',hour:'2-digit', minute:'2-digit'});
   const isim = x => x.ad==='1' ? f.ev : x.ad==='2' ? f.dep : x.ad==='X' ? 'Beraberlik' : x.ad;
   const satir = (e, n, v) => `<div class="ks"><span class="e">${e}</span><span class="n">${n}</span><span class="v">${v}</span></div>`;
   // 🔮 Tahmin
@@ -1148,7 +1148,7 @@ function kararKartHtml(f, i){
   const marj = f.bil && f.bil['1X2'].every(x=>x) ? `Bilyoner bu maçta %${((f.bil['1X2'].reduce((a,o)=>a+1/o,0)-1)*100).toFixed(0)} pay kesiyor` : '';
   const oynaBtn = H.deger.length && !basladi(f) ? `<button class="mini" style="margin-top:8px;width:100%" data-kdef="${i}">📒 Fırsatı oynadım, deftere yaz (önerilen ${kellyMiktar(H.deger[0].p, H.deger[0].sen)})</button>` : '';
   return `<div class="kk" data-kk="${i}">
-    <div class="lig"><span>${lig ? lig.ad : esc(f.lig)}</span><span>${saat}</span></div>
+    <div class="lig"><span>${lig ? lig.ad : esc(f.lig)}</span><span>${saat} TSİ</span></div>
     <div class="tk">${esc(f.ev)} – ${esc(f.dep)}</div>
     ${ic}
     <div class="kdetay">${tablo ? `<div class="kucuk" style="margin-bottom:4px">Ayrıntı: Bilyoner oranı "En az" sayısına ulaşırsa fırsat sayılır.</div><table class="ktablo"><tr><td>Seçenek</td><td>Bilyoner</td><td>En az</td><td>100 TL'de ort.</td><td></td></tr>${tablo}</table>` : ''}
@@ -1158,8 +1158,9 @@ function kararKartHtml(f, i){
 function kararlarCiz(){
   const el = $('kararListe');
   if(!kararVeri.length){ el.innerHTML = '<div class="bos">Henüz oran yok.<br><br>Bilyoner ekran görüntüsünü Claude\'a gönder, oranlar buraya gelsin.</div>'; $('kararDurum').textContent=''; return; }
-  const gunAd = t => { const g = new Date(t).toLocaleDateString('tr-TR',{weekday:'long', day:'numeric', month:'long'});
-    const bugun = new Date().toDateString(), yarin = new Date(Date.now()+86400e3).toDateString(), d = new Date(t).toDateString();
+  const gunAd = t => { const g = new Date(t).toLocaleDateString('tr-TR',{timeZone:'Europe/Istanbul',weekday:'long', day:'numeric', month:'long'});
+    const trGun = ms => new Date(ms).toLocaleDateString('tr-TR',{timeZone:'Europe/Istanbul'});
+    const bugun = trGun(Date.now()), yarin = trGun(Date.now()+86400e3), d = trGun(t);
     return d===bugun ? 'Bugün · ' + g : d===yarin ? 'Yarın · ' + g : g; };
   let h = '', son = '';
   kararVeri.forEach((f,i) => { const g = gunAd(f.t); if(g!==son){ h += `<div class="kgun">${g}</div>`; son = g; } h += kararKartHtml(f, i); });
