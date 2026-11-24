@@ -3,8 +3,9 @@ name: Veri guncelle
 # Uygulama veriyi kendi sitesinden okur; CORS proxy'ye gerek kalmaz.
 on:
   schedule:
-    - cron: "17 */3 * * *"
-    # Salı ve Cuma öğleden sonra (UTC 12–21) saatte bir: football-data maç öncesi oranları bu günlerde ekliyor
+    # Her saat (GitHub planlı görevleri bazen atlıyor; sık çalışma bunu telafi eder)
+    - cron: "17 * * * *"
+    # Salı ve Cuma öğleden sonra (UTC 12–21) yarım saatte bir ek çalışma: maç öncesi oranlar bu saatlerde eklenir
     - cron: "47 12-21 * * 2,5"
   workflow_dispatch:
   push:
